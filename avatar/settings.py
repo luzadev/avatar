@@ -35,6 +35,7 @@ DEFAULTS: dict[str, Any] = {
     "monitor_annuncia": True,          # annuncia a voce gli avvisi
     "monitor_intervallo": 60,          # secondi tra un controllo e l'altro
     "monitor_regole": "",              # cosa merita attenzione (vuoto = regole predefinite)
+    "monitor_escludi": "",             # parole/frasi (separate da virgola) che escludono un messaggio dagli avvisi
 }
 
 SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash")

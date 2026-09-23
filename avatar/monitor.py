@@ -208,6 +208,15 @@ class Monitor:
                     print(f"[monitor] {name}: {err}")
             seen = set(self.state.get("seen", []))
             items = [it for it in items if it["ref"] not in seen]
+            excluded = [w.strip().lower() for w in str(self.settings.get("monitor_escludi") or "").split(",") if w.strip()]
+            if excluded:
+                def _keep(it: dict) -> bool:
+                    hay = f"{it.get('chi', '')} {it.get('testo', '')}".lower()
+                    return not any(w in hay for w in excluded)
+                skipped = [it for it in items if not _keep(it)]
+                items = [it for it in items if _keep(it)]
+                for it in skipped:
+                    print(f"[monitor] escluso per parola chiave: {it['fonte']} {it['chi']}")
             self.state.setdefault("seen", []).extend(it["ref"] for it in items)
             alerts = self._classify(items) if items else []
             for a in alerts:

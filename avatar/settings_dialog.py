@@ -165,6 +165,8 @@ class SettingsDialog(QDialog):
         from .monitor import DEFAULT_RULES
         self.mon_rules = QLineEdit(s.get("monitor_regole") or ""); self.mon_rules.setPlaceholderText(DEFAULT_RULES[:110] + "…")
         form5.addRow("Cosa merita un avviso", self.mon_rules)
+        self.mon_excl = QLineEdit(s.get("monitor_escludi") or ""); self.mon_excl.setPlaceholderText("es. newsletter, offerta, gruppo Calcetto, Amazon  — parole separate da virgola, cercate in mittente, chat e testo")
+        form5.addRow("Escludi dagli avvisi", self.mon_excl)
         root.addLayout(form5)
 
         btns = QHBoxLayout(); btns.addStretch()
@@ -348,6 +350,7 @@ class SettingsDialog(QDialog):
             "monitor_annuncia": self.mon_say.isChecked(),
             "monitor_intervallo": int(self.mon_int.currentData() or 60),
             "monitor_regole": self.mon_rules.text().strip(),
+            "monitor_escludi": self.mon_excl.text().strip(),
         }
         if self.tg_hash.text().strip():
             values["telegram_api_hash"] = self.tg_hash.text().strip()

@@ -40,6 +40,8 @@ Trascina un file nella zona "File upload" (o clicca per sceglierlo) e poi fai la
 
 Attivabile in "Motore e Voce" › Monitor. Ogni minuto (intervallo regolabile) l'app raccoglie i messaggi nuovi da Mail (posta in arrivo), WhatsApp (ponte in tempo reale), Messaggi (SMS e iMessage) e Telegram (account collegato), li passa a un modello veloce con le regole che scrivi tu, e per quelli che meritano attenzione crea un avviso: riga rossa nel log, notifica di macOS e, se vuoi, annuncio a voce. Le regole predefinite segnalano richieste di aiuto o assistenza, domande che aspettano risposta, problemi, urgenze, scadenze, pagamenti e appuntamenti da confermare, e ignorano newsletter, promozioni e notifiche automatiche.
 
+Il campo "Escludi dagli avvisi" accetta parole o frasi separate da virgola (per esempio `newsletter, offerta, gruppo Calcetto`): i messaggi in cui compaiono, nel mittente, nel nome della chat o nel testo, vengono scartati prima della valutazione.
+
 A voce: "ci sono avvisi?", "chiudi l'avviso di Marco", "controlla adesso". Il primo giro dopo l'attivazione prende solo la linea di base: vengono valutati i messaggi arrivati da quel momento in poi. Con il motore Claude Code la valutazione usa Haiku a basso sforzo; con Claude API usa Haiku 4.5; con il server locale usa il modello locale.
 
 ## Plugin: comandare il Mac a voce
