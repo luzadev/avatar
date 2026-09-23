@@ -98,6 +98,14 @@ uv run python main.py
 
 Al primo avvio si apre la finestra "Motore & Voce" se manca la configurazione. La prima volta vengono scaricati i modelli di Kokoro (circa 330 MB) e di Whisper (circa 500 MB per "small"); poi tutto resta in locale.
 
+## App con doppio clic
+
+```bash
+uv run python scripts/crea_app.py
+```
+
+Crea `~/Applications/LuZa.app`: un'app con icona che avvia l'assistente senza terminale (usa l'ambiente `.venv` di questa cartella, quindi non spostare la cartella; se lo fai, rilancia lo script). Trascinala nel Dock per averla sempre a portata di mano; per l'avvio automatico al login aggiungila in Impostazioni di Sistema › Generali › Elementi login. Il log dell'app è in `~/Library/Logs/LuZa.log`. Al primo avvio dal bundle macOS richiede di nuovo i permessi (microfono, calendario, promemoria, contatti, automazione).
+
 ## Uso
 
 | Azione | Come |
