@@ -101,6 +101,30 @@ class Monitor:
             self.state["wa_ts"] = max(r[1] for r in rows)
         return [{"fonte": "WhatsApp", "chi": chat if sender == chat else f"{sender} (gruppo {chat})", "testo": text[:300], "ref": f"wa:{rid}"} for rid, ts, chat, sender, text in rows]
 
+    def _collect_sms(self, baseline: bool) -> list[dict]:
+        try:
+            import importlib
+            from avatar.plugins import registry
+            registry.load()
+            sms = importlib.import_module("avatar_plugins.sms")
+        except Exception:
+            return []
+        if not sms.DB.exists():
+            return []
+        last = self.state.get("sms_rowid")
+        try:
+            rows = sms._query("AND m.is_from_me = 0 AND m.ROWID > ?", (last if last is not None else 10**12,), 40) if not (last is None or baseline) else []
+            if last is None or baseline:
+                top = sms._query("", (), 1)
+                self.state["sms_rowid"] = top[0]["id"] if top else 0
+                return []
+        except Exception as err:
+            print(f"[monitor] messaggi: {err}")
+            return []
+        if rows:
+            self.state["sms_rowid"] = max(r["id"] for r in rows)
+        return [{"fonte": "Messaggi", "chi": r["chi"], "testo": r["testo"][:300], "ref": f"sms:{r['id']}"} for r in rows]
+
     def _collect_telegram(self, baseline: bool) -> list[dict]:
         try:
             from avatar import telegram_client as tg
@@ -176,7 +200,8 @@ class Monitor:
     def scan(self, baseline: bool = False) -> list[dict]:
         with _lock:
             first = self.state.get("mail_rowid") is None and self.state.get("wa_ts") is None and not self.state.get("tg")
-            items = self._collect_mail(baseline or first) + self._collect_whatsapp(baseline or first) + self._collect_telegram(baseline or first)
+            items = (self._collect_mail(baseline or first) + self._collect_whatsapp(baseline or first)
+                     + self._collect_sms(baseline or first) + self._collect_telegram(baseline or first))
             seen = set(self.state.get("seen", []))
             items = [it for it in items if it["ref"] not in seen]
             self.state.setdefault("seen", []).extend(it["ref"] for it in items)

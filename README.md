@@ -38,7 +38,7 @@ Trascina un file nella zona "File upload" (o clicca per sceglierlo) e poi fai la
 
 ## Monitor con avvisi (Mail, WhatsApp, Telegram)
 
-Attivabile in "Motore e Voce" › Monitor. Ogni minuto (intervallo regolabile) l'app raccoglie i messaggi nuovi da Mail (posta in arrivo), WhatsApp (ponte in tempo reale) e Telegram (account collegato), li passa a un modello veloce con le regole che scrivi tu, e per quelli che meritano attenzione crea un avviso: riga rossa nel log, notifica di macOS e, se vuoi, annuncio a voce. Le regole predefinite segnalano richieste di aiuto o assistenza, domande che aspettano risposta, problemi, urgenze, scadenze, pagamenti e appuntamenti da confermare, e ignorano newsletter, promozioni e notifiche automatiche.
+Attivabile in "Motore e Voce" › Monitor. Ogni minuto (intervallo regolabile) l'app raccoglie i messaggi nuovi da Mail (posta in arrivo), WhatsApp (ponte in tempo reale), Messaggi (SMS e iMessage) e Telegram (account collegato), li passa a un modello veloce con le regole che scrivi tu, e per quelli che meritano attenzione crea un avviso: riga rossa nel log, notifica di macOS e, se vuoi, annuncio a voce. Le regole predefinite segnalano richieste di aiuto o assistenza, domande che aspettano risposta, problemi, urgenze, scadenze, pagamenti e appuntamenti da confermare, e ignorano newsletter, promozioni e notifiche automatiche.
 
 A voce: "ci sono avvisi?", "chiudi l'avviso di Marco", "controlla adesso". Il primo giro dopo l'attivazione prende solo la linea di base: vengono valutati i messaggi arrivati da quel momento in poi. Con il motore Claude Code la valutazione usa Haiku a basso sforzo; con Claude API usa Haiku 4.5; con il server locale usa il modello locale.
 
@@ -62,7 +62,8 @@ Altri plugin inclusi, tutti locali:
 | `timer` | timer, sveglie, attività programmate anche giornaliere | "timer di 10 minuti per la pasta", "svegliami alle 7", "ogni mattina alle 8 leggimi la posta" |
 | `meteo` | previsioni (Open-Meteo, senza chiave) | "che tempo fa domani a Milano" |
 | `contatti` | Contatti | "qual è il numero di Anna", "l'email di Luca" |
-| `messaggi` | iMessage con conferma | "manda un messaggio a Luca che arrivo alle 9" |
+| `messaggi` | invio iMessage o SMS con conferma | "manda un messaggio a Luca che arrivo alle 9", "mandagli un SMS" |
+| `sms` | lettura di SMS e iMessage ricevuti sul Mac (app Messaggi): non letti, conversazioni, ricerca | "ho SMS nuovi?", "cosa mi ha scritto Anna per messaggio?", "cerca il codice nei messaggi" |
 | `file` | Spotlight, cartelle, lettura txt/PDF/Word | "cerca il PDF del contratto", "cosa c'è sul Desktop", "riassumi il documento X" |
 | `comandi_rapidi` | Comandi Rapidi, anche HomeKit | "accendi le luci del soggiorno" (se esiste il comando rapido) |
 | `browser` | legge pagine, cerca su Google/YouTube/Maps/Amazon/Wikipedia | "leggimi questa pagina", "metti su YouTube i Pink Floyd" |
@@ -85,7 +86,7 @@ Per scriverne uno nuovo copia la struttura di `plugins/calendario.py`: una lista
 
 - macOS su Apple Silicon, Python 3.12, [uv](https://docs.astral.sh/uv/).
 - `brew install espeak-ng portaudio` (fonetica italiana per Kokoro e audio).
-- Permessi macOS richiesti al primo uso: Microfono, Calendario.
+- Permessi macOS richiesti al primo uso: Microfono, Calendario, Promemoria, Contatti, Automazione; per leggere SMS e iMessage serve «Accesso completo al disco» all'app (Impostazioni di Sistema › Privacy e sicurezza).
 - Per il motore Claude Code: Claude Code installato e collegato.
 
 ## Avvio

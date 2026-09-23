@@ -8,8 +8,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from avatar.macos import osa, confirm_or_param, CONFERMATO  # noqa: E402
 
 SEND = '''on run argv
+  set kind to item 3 of argv
   tell application "Messages"
-    set svc to 1st account whose service type = iMessage
+    if kind is "sms" then
+      set svc to 1st account whose service type = SMS
+    else
+      set svc to 1st account whose service type = iMessage
+    end if
     set b to participant (item 1 of argv) of svc
     send (item 2 of argv) to b
   end tell
@@ -25,9 +30,20 @@ def invia(params: dict, ctx: dict) -> str:
     if "@" not in a and not a.replace("+", "").replace(" ", "").isdigit():
         return "Il destinatario deve essere un numero di telefono o un'email: cerca il contatto con contatti_cerca."
 
+    servizio = str(params.get("servizio", "auto")).lower()
+
     def do() -> str:
-        osa(SEND, a.replace(" ", ""), testo, timeout=30)
-        msg = f"Messaggio inviato a {a}."
+        dest = a.replace(" ", "")
+        try:
+            osa(SEND, dest, testo, "sms" if servizio == "sms" else "imessage", timeout=30)
+            via = "SMS" if servizio == "sms" else "iMessage"
+        except Exception as err:
+            if servizio == "auto" and "@" not in dest:
+                osa(SEND, dest, testo, "sms", timeout=30)
+                via = "SMS"
+            else:
+                raise
+        msg = f"Messaggio inviato a {a} via {via}."
         if ctx.get("say"):
             ctx["say"](msg)
         return msg
@@ -36,6 +52,6 @@ def invia(params: dict, ctx: dict) -> str:
 
 
 TOOLS = [
-    {"name": "messaggi_invia", "description": "Invia un iMessage a un numero di telefono (con prefisso) o a un'email. Azione irreversibile con conferma sullo schermo; con [CONFIRMATION_PENDING] di' all'utente di confermare e non dire che è inviato. Per i nomi usa prima contatti_cerca.",
-     "parameters": {"type": "object", "properties": {"a": {"type": "string"}, "testo": {"type": "string"}, "confermato": CONFERMATO}, "required": ["a", "testo"]}, "run": invia},
+    {"name": "messaggi_invia", "description": "Invia un iMessage o un SMS a un numero di telefono (con prefisso) o a un'email. Azione irreversibile con conferma sullo schermo; con [CONFIRMATION_PENDING] di' all'utente di confermare e non dire che è inviato. Per i nomi usa prima contatti_cerca.",
+     "parameters": {"type": "object", "properties": {"a": {"type": "string"}, "testo": {"type": "string"}, "servizio": {"type": "string", "enum": ["auto", "imessage", "sms"], "description": "auto = iMessage con ripiego su SMS."}, "confermato": CONFERMATO}, "required": ["a", "testo"]}, "run": invia},
 ]
