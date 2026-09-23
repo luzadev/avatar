@@ -95,7 +95,7 @@ exec "{python}" main.py >> "$HOME/Library/Logs/{APP_NAME}.log" 2>&1
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dest", default=str(Path.home() / "Applications"))
+    ap.add_argument("--dest", default="/Applications")
     a = ap.parse_args()
     dest = Path(a.dest).expanduser()
     dest.mkdir(parents=True, exist_ok=True)
