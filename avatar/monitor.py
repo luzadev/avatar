@@ -112,15 +112,11 @@ class Monitor:
         if not sms.DB.exists():
             return []
         last = self.state.get("sms_rowid")
-        try:
-            rows = sms._query("AND m.is_from_me = 0 AND m.ROWID > ?", (last if last is not None else 10**12,), 40) if not (last is None or baseline) else []
-            if last is None or baseline:
-                top = sms._query("", (), 1)
-                self.state["sms_rowid"] = top[0]["id"] if top else 0
-                return []
-        except Exception as err:
-            print(f"[monitor] messaggi: {err}")
+        if last is None or baseline:
+            top = sms._query("", (), 1)   # può fallire senza «Accesso completo al disco»: l'errore arriva a scan()
+            self.state["sms_rowid"] = top[0]["id"] if top else 0
             return []
+        rows = sms._query("AND m.is_from_me = 0 AND m.ROWID > ?", (last,), 40)
         if rows:
             self.state["sms_rowid"] = max(r["id"] for r in rows)
         return [{"fonte": "Messaggi", "chi": r["chi"], "testo": r["testo"][:300], "ref": f"sms:{r['id']}"} for r in rows]
@@ -200,8 +196,16 @@ class Monitor:
     def scan(self, baseline: bool = False) -> list[dict]:
         with _lock:
             first = self.state.get("mail_rowid") is None and self.state.get("wa_ts") is None and not self.state.get("tg")
-            items = (self._collect_mail(baseline or first) + self._collect_whatsapp(baseline or first)
-                     + self._collect_sms(baseline or first) + self._collect_telegram(baseline or first))
+            items: list[dict] = []
+            for name, fn in (("Mail", self._collect_mail), ("WhatsApp", self._collect_whatsapp), ("Messaggi", self._collect_sms), ("Telegram", self._collect_telegram)):
+                try:
+                    items += fn(baseline or first)
+                except Exception as err:
+                    key = f"warned_{name}"
+                    if not self.state.get(key):
+                        self.state[key] = True
+                        self.ui.write_log(f"SYS: Monitor, {name} non leggibile — {str(err)[:160]}")
+                    print(f"[monitor] {name}: {err}")
             seen = set(self.state.get("seen", []))
             items = [it for it in items if it["ref"] not in seen]
             self.state.setdefault("seen", []).extend(it["ref"] for it in items)
