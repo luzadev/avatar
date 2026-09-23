@@ -1,0 +1,29 @@
+[project]
+name = "avatarpy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=1.7.0",
+    "faster-whisper>=1.2.1",
+    "keyring>=25.7.0",
+    "kokoro>=0.9.4",
+    "mlx-whisper>=0.4.3",
+    "numpy>=2.5.3",
+    "openai>=3.17.0",
+    "psutil>=7.2.2",
+    "pyobjc-framework-contacts>=12.2.2",
+    "pyobjc-framework-eventkit>=12.2.2",
+    "pyobjc-framework-quartz>=12.2.2",
+    "pyobjc-framework-vision>=12.2.2",
+    "pypdf>=6.19.0",
+    "pyqt6>=6.11.0",
+    "pyqt6-webengine>=6.11.0",
+    "python-docx>=1.2.0",
+    "qrcode[pil]>=8.2",
+    "requests>=2.34.2",
+    "sounddevice>=0.5.6",
+    "soundfile>=0.14.0",
+    "telethon>=1.45.0",
+]

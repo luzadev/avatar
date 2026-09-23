@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<title>Avatar 3D</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #00060a; overflow: hidden; font-family: Menlo, monospace; }
+  #scene { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+  #overlay { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; pointer-events: none; }
+  #state { font-size: 15px; font-weight: bold; letter-spacing: 2px; color: #00d4ff; text-shadow: 0 0 8px rgba(0,212,255,.5); }
+  #wave { display: block; margin: 8px auto 0; }
+  #hint { position: absolute; top: 10px; right: 12px; font-size: 11px; color: #3a8a9a; }
+  #msg { position: absolute; top: 45%; left: 0; right: 0; text-align: center; color: #79c0d2; font-size: 14px; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="msg">Carico l'avatar…</div>
+  <div id="hint">clic: busto / figura intera</div>
+  <div id="overlay">
+    <div id="state">● LISTENING</div>
+    <canvas id="wave" width="360" height="40"></canvas>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

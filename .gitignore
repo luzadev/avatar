@@ -1,0 +1,21 @@
+# Ambienti e dipendenze
+.venv/
+__pycache__/
+*.pyc
+whatsapp_bridge/node_modules/
+
+# Dati personali: conversazioni, archivi chat, sessioni, memoria, impostazioni e chiavi
+data/
+config/api_keys.json
+config/settings.json
+memory/long_term.json
+*.session
+*.session-journal
+
+# Modelli 3D (volti personali, file grandi): aggiungili a mano in avatar3d/models/
+avatar3d/models/*.glb
+avatar3d/models_archivio/
+
+# Varie
+*.log
+.DS_Store
