@@ -5,7 +5,7 @@ import threading
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
-                             QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget, QDoubleSpinBox)
+                             QPushButton, QScrollArea, QStackedWidget, QTabWidget, QVBoxLayout, QWidget, QDoubleSpinBox)
 
 from .engines.claude_code import check_claude_code
 from .engines.openai_compat import list_models
@@ -13,7 +13,10 @@ from .settings import Settings
 from .tts import KOKORO_VOICES, SystemVoice
 
 STYLE = """
-QDialog, QScrollArea, QScrollArea > QWidget > QWidget { background: #030a10; color: #cfe8ff; }
+QDialog, QScrollArea, QScrollArea > QWidget > QWidget, QTabWidget::pane { background: #030a10; color: #cfe8ff; }
+QTabWidget::pane { border: 1px solid #12354a; border-radius: 4px; }
+QTabBar::tab { background: #05202c; color: #9fdfff; padding: 7px 16px; border: 1px solid #12354a; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; font-family: 'Menlo'; font-size: 13px; margin-right: 2px; }
+QTabBar::tab:selected { background: #0a4a66; color: #ffffff; }
 QLabel { color: #8fb8d8; font-family: 'Menlo'; font-size: 14px; }
 QLineEdit, QComboBox, QDoubleSpinBox { background: #000d12; color: #e6f4ff; border: 1px solid #12354a; border-radius: 3px; padding: 4px 6px; font-family: 'Menlo'; font-size: 14px; }
 QLineEdit:focus, QComboBox:focus { border: 1px solid #3fd0ff; }
@@ -51,16 +54,26 @@ class SettingsDialog(QDialog):
         self.setStyleSheet(STYLE)
         self.setMinimumWidth(720)
         s = settings
-        # Contenuto scorrevole; i pulsanti Salva/Annulla restano fissi in basso.
-        content = QWidget()
-        root = QVBoxLayout(content)
+        # Schede: Motore, Voce, Messaggistica, Monitor. Salva/Annulla fissi in basso.
+        self.tabs = QTabWidget()
+        def page(title: str) -> QVBoxLayout:
+            w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(12, 12, 12, 12); lay.setSpacing(10)
+            sc = QScrollArea(); sc.setWidgetResizable(True); sc.setWidget(w); sc.setFrameShape(QFrame.Shape.NoFrame)
+            self.tabs.addTab(sc, title)
+            lay.addStretch(1)
+            return lay
+        pg_motore, pg_voce, pg_msg, pg_mon = page("Motore"), page("Voce e avatar"), page("Messaggistica"), page("Monitor")
+        def add(lay, item):   # inserisce prima dello stretch finale
+            if isinstance(item, QWidget): lay.insertWidget(lay.count() - 1, item)
+            else: lay.insertLayout(lay.count() - 1, item)
+        root = pg_motore
 
         form = QFormLayout()
         self.provider = _combo(PROVIDERS, s.get("provider"))
         form.addRow("Motore", self.provider)
         self.effort = _combo(EFFORTS, s.get("effort"))
         form.addRow("Profondità di ragionamento (Claude e Claude Code)", self.effort)
-        root.addLayout(form)
+        add(pg_motore, form)
 
         self.stack = QStackedWidget()
         # Anthropic
@@ -96,7 +109,7 @@ class SettingsDialog(QDialog):
         self.cc_path = QLineEdit(s.get("claudecode_path")); self.cc_path.setPlaceholderText("vuoto = automatico")
         f.addRow("Percorso del comando claude", self.cc_path)
         self.stack.addWidget(w)
-        root.addWidget(self.stack)
+        add(pg_motore, self.stack)
         self.provider.currentIndexChanged.connect(self.stack.setCurrentIndex)
         self.stack.setCurrentIndex(self.provider.currentIndex())
 
@@ -148,7 +161,7 @@ class SettingsDialog(QDialog):
         form2.addRow("Avatar 3D (file in avatar3d/models)", self.avatar_model)
         self.vad = QDoubleSpinBox(); self.vad.setRange(0.02, 0.5); self.vad.setSingleStep(0.01); self.vad.setValue(float(s.get("vad_threshold", 0.08)))
         form2.addRow("Sensibilità microfono (più basso = più sensibile)", self.vad)
-        root.addLayout(form2)
+        add(pg_voce, form2)
 
         # ── Telegram ──────────────────────────────────────────────────────
         form3 = QFormLayout()
@@ -171,7 +184,7 @@ class SettingsDialog(QDialog):
         self.tg_qr_label = QLabel(); self.tg_qr_label.setFixedSize(220, 220); self.tg_qr_label.setScaledContents(True); row.addWidget(self.tg_qr_label); row.addStretch()
         form3.addRow("Alternativa", row)
         self.tg_hint = QLabel("…"); self.tg_hint.setWordWrap(True); form3.addRow("", self.tg_hint)
-        root.addLayout(form3)
+        add(pg_msg, form3)
         threading.Thread(target=lambda: self._async.emit("tg", self._tg_status()), daemon=True).start()
 
         # ── WhatsApp (dispositivo collegato, Baileys) ─────────────────────
@@ -188,7 +201,7 @@ class SettingsDialog(QDialog):
         self.wa_qr_label = QLabel(); self.wa_qr_label.setFixedSize(220, 220); self.wa_qr_label.setScaledContents(True); row.addWidget(self.wa_qr_label)
         self.wa_hint = QLabel("…"); self.wa_hint.setWordWrap(True); row.addWidget(self.wa_hint, 1)
         form4.addRow("", row)
-        root.addLayout(form4)
+        add(pg_msg, form4)
         threading.Thread(target=lambda: self._async.emit("wa", (self._wa_status(), None)), daemon=True).start()
 
         # ── Monitor avvisi ────────────────────────────────────────────────
@@ -204,14 +217,13 @@ class SettingsDialog(QDialog):
         form5.addRow("Cosa merita un avviso", self.mon_rules)
         self.mon_excl = QLineEdit(s.get("monitor_escludi") or ""); self.mon_excl.setPlaceholderText("es. newsletter, offerta, gruppo Calcetto, Amazon  — parole separate da virgola, cercate in mittente, chat e testo")
         form5.addRow("Escludi dagli avvisi", self.mon_excl)
-        root.addLayout(form5)
+        add(pg_mon, form5)
 
         btns = QHBoxLayout(); btns.addStretch()
         cancel = QPushButton("Annulla"); cancel.clicked.connect(self.reject); btns.addWidget(cancel)
         save = QPushButton("Salva"); save.setObjectName("primary"); save.clicked.connect(self._save); btns.addWidget(save)
-        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(content); scroll.setFrameShape(QFrame.Shape.NoFrame)
         outer = QVBoxLayout(self); outer.setContentsMargins(10, 10, 10, 10)
-        outer.addWidget(scroll, 1)
+        outer.addWidget(self.tabs, 1)
         outer.addLayout(btns)
         screen = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
         h = int(screen.height() * 0.85) if screen else 800
