@@ -266,7 +266,91 @@ class ElevenLabsVoice:
         return np.frombuffer(r.content, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+class VoiceboxVoice:
+    """Voicebox (app locale): Qwen3-TTS, Chatterbox, Kokoro… con accelerazione MLX e profili vocali clonati."""
+
+    API = "http://127.0.0.1:17493"
+
+    def __init__(self, profile_id: str, engine: str = "qwen", instruct: str = "", on_status=None) -> None:
+        self.profile_id, self.engine, self.instruct = profile_id, engine, instruct
+        self.voice = f"voicebox:{profile_id}:{engine}:{instruct}"
+        self._on_status = on_status or (lambda m: None)
+
+    @classmethod
+    def alive(cls) -> bool:
+        import requests
+        try:
+            return requests.get(f"{cls.API}/health", timeout=3).ok
+        except requests.RequestException:
+            return False
+
+    @classmethod
+    def ensure_running(cls, wait: int = 60) -> None:
+        import subprocess
+        import time as _t
+        if cls.alive():
+            return
+        subprocess.run(["open", "-a", "Voicebox"], check=False, timeout=15)
+        for _ in range(wait):
+            _t.sleep(1)
+            if cls.alive():
+                return
+        raise RuntimeError("Voicebox non risponde: installalo da github.com/jamiepine/voicebox e aprilo una volta.")
+
+    @classmethod
+    def list_profiles(cls) -> list[tuple[str, str]]:
+        import requests
+        cls.ensure_running()
+        d = requests.get(f"{cls.API}/profiles", timeout=15).json()
+        d = d if isinstance(d, list) else d.get("profiles", [])
+        return [(p["id"], f"{p.get('name')} ({p.get('language') or '?'}, {p.get('voice_type') or ''})") for p in d]
+
+    def load(self) -> None:
+        if not self.profile_id:
+            raise RuntimeError("Voicebox: scegli un profilo vocale in Motore e Voce (pulsante «Carica profili»).")
+        self._on_status("Avvio Voicebox…")
+        try:
+            self.ensure_running()
+        finally:
+            self._on_status(None)
+
+    def synthesize(self, text: str) -> np.ndarray:
+        import io
+        import time as _t
+        import requests
+        import soundfile as sf
+        body = {"profile_id": self.profile_id, "text": text, "language": "it", "engine": self.engine}
+        if self.engine == "qwen":
+            body["model_size"] = "1.7B"
+        if self.instruct and self.engine in ("qwen", "qwen_custom_voice"):
+            body["instruct"] = self.instruct[:500]
+        r = requests.post(f"{self.API}/generate", json=body, timeout=120)
+        if not r.ok:
+            raise RuntimeError(f"Voicebox {r.status_code}: {r.text[:160]}")
+        g = r.json()
+        gid = g["id"]
+        t0 = _t.time()
+        # /generate/{id}/status è un flusso SSE: per il polling si usa /history/{id} (JSON).
+        while g.get("status") in ("generating", "pending", "queued", "processing") and _t.time() - t0 < 300:
+            _t.sleep(0.25)
+            h = requests.get(f"{self.API}/history/{gid}", timeout=10)
+            if h.ok and h.headers.get("Content-Type", "").startswith("application/json"):
+                g = h.json()
+        if g.get("status") != "completed":
+            raise RuntimeError(f"Voicebox: {g.get('status')} {g.get('error') or ''}".strip())
+        a = requests.get(f"{self.API}/audio/{gid}", timeout=60)
+        data, sr = sf.read(io.BytesIO(a.content), dtype="float32")
+        if data.ndim > 1:
+            data = data[:, 0]
+        if sr != OUT_RATE:
+            data = np.interp(np.arange(0, data.size, sr / OUT_RATE), np.arange(data.size), data).astype(np.float32)
+        return data
+
+
 def make_voice(settings, on_status=None):
+    if settings.get("tts_engine") == "voicebox":
+        return VoiceboxVoice(str(settings.get("voicebox_profile_id") or ""), str(settings.get("voicebox_engine") or "qwen"),
+                             str(settings.get("voicebox_instruct") or ""), on_status=on_status)
     if settings.get("tts_engine") == "elevenlabs":
         return ElevenLabsVoice(settings.get_secret("elevenlabs_api_key"), str(settings.get("elevenlabs_voice_id") or ""),
                                str(settings.get("elevenlabs_model") or "eleven_flash_v2_5"),

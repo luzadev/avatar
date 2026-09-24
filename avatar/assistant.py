@@ -234,7 +234,7 @@ class Assistant:
                 self.settings.save()
         else:
             eng = self.settings.get("tts_engine")
-            label = "Sistema" if eng == "system" else ("Sara" if eng in ("chatterbox", "elevenlabs") else
+            label = "Sistema" if eng == "system" else ("Sara" if eng in ("chatterbox", "elevenlabs", "voicebox") else
                 {"if_sara": "Sara", "im_nicola": "Nicola"}.get(self.settings.get("kokoro_voice"), "Sara"))
             try:
                 if cm.get_voice() != label:

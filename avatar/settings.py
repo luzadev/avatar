@@ -26,6 +26,9 @@ DEFAULTS: dict[str, Any] = {
     "kokoro_voice": "if_sara",
     "chatterbox_exaggeration": 0.6,    # 0.3 sobria … 0.9 molto enfatica
     "chatterbox_cfg": 0.3,             # più basso = più veloce e meno aderente al testo
+    "voicebox_profile_id": "",
+    "voicebox_engine": "qwen",         # qwen | chatterbox | chatterbox_turbo | kokoro | luxtts
+    "voicebox_instruct": "",           # istruzione di stile per Qwen (es. "parla in modo caloroso e calmo")
     "elevenlabs_voice_id": "",
     "elevenlabs_model": "eleven_flash_v2_5",   # rapido; eleven_multilingual_v2 = qualità massima
     "elevenlabs_stability": 0.45,
