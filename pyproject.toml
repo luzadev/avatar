@@ -13,6 +13,7 @@ dependencies = [
     "mlx-whisper>=0.4.3",
     "numpy>=2.5.3",
     "openai>=3.17.0",
+    "opencv-python>=5.0.0.93",
     "psutil>=7.2.2",
     "pyobjc-framework-contacts>=12.2.2",
     "pyobjc-framework-eventkit>=12.2.2",

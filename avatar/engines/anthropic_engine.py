@@ -23,6 +23,22 @@ class Aborted(Exception):
     pass
 
 
+def _tool_content(res: str):
+    """Se il risultato cita un'immagine (riga «IMMAGINE: percorso»), la allega come blocco image."""
+    import base64
+    import re as _re
+    from pathlib import Path as _P
+    m = _re.search(r"^IMMAGINE: (.+)$", res, flags=_re.M)
+    if not m or not _P(m.group(1).strip()).exists():
+        return res
+    try:
+        from avatar.attachments import image_payload
+        media, data = image_payload(_P(m.group(1).strip()))
+        return [{"type": "text", "text": res}, {"type": "image", "source": {"type": "base64", "media_type": media, "data": base64.b64encode(data).decode()}}]
+    except Exception:
+        return res
+
+
 def friendly_error(err: Exception) -> str:
     if isinstance(err, anthropic.AuthenticationError):
         return "La chiave API Anthropic non è valida. Controllala nelle impostazioni."
@@ -147,7 +163,7 @@ class AnthropicEngine:
                         res, ev = run_tool(b.name, parse_args(b.input))
                     if ev:
                         emit(ev)
-                    results.append({"type": "tool_result", "tool_use_id": b.id, "content": res})
+                    results.append({"type": "tool_result", "tool_use_id": b.id, "content": _tool_content(res)})
                 self.history.messages.append({"role": "user", "content": results})
                 emit({"type": "status", "status": "thinking"})
 

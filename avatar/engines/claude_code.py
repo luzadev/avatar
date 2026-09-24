@@ -93,11 +93,18 @@ class ClaudeCodeEngine:
             f"Adesso è {today_label()}.",
             "Strumenti di memoria (obbligatori): per ricordare un fatto sull'utente chiama `mcp__avatar__salva_memoria`; per cancellarne uno `mcp__avatar__dimentica_memoria`; per cercare `mcp__avatar__cerca_memoria`. Non dire mai di aver salvato qualcosa senza averlo chiamato davvero. Gli altri strumenti `mcp__avatar__*` (per esempio il calendario) agiscono sul Mac dell'utente: usali quando servono, e per le azioni irreversibili chiedi conferma a voce prima di richiamarli con confermato=true.",
             access,
+            "Quando uno strumento risponde con una riga «IMMAGINE: percorso», leggi quel file con Read per vedere l'immagine prima di rispondere.",
             "Stai parlando dentro un'app vocale: rispondi in modo conversazionale, senza intestazioni Markdown né tabelle, e non citare nomi di file o strumenti interni a meno che non serva.",
         ])
 
     def _args(self, session_id: str, resume: bool, attach_path: str = "") -> list[str]:
         flags = dict(ACCESS[self.access])
+        # Le catture di webcam/schermo del plugin visione sono sempre leggibili.
+        from avatar.settings import DATA_DIR
+        captures = str(DATA_DIR / "captures")
+        if "Read" not in flags["tools"] and flags["tools"] != "default":
+            flags["tools"] = flags["tools"] + ",Read"
+        flags["allowed"] = [*flags["allowed"], f"Read(//{captures.lstrip('/')}/**)"]
         if attach_path:
             # Permesso di lettura limitato al file allegato (immagini incluse: Claude Code le vede).
             if "Read" not in flags["tools"] and flags["tools"] != "default":

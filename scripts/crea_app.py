@@ -132,6 +132,7 @@ exec "{python}" main.py >> "$HOME/Library/Logs/{APP_NAME}.log" 2>&1
         "CFBundleExecutable": APP_NAME, "CFBundleIconFile": f"{APP_NAME}.icns", "LSMinimumSystemVersion": "13.0",
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription": "Per ascoltare la tua voce.",
+        "NSCameraUsageDescription": "Per guardare l'ambiente dalla webcam quando lo chiedi.",
         "NSCalendarsFullAccessUsageDescription": "Per leggere e creare eventi nel Calendario.",
         "NSCalendarsUsageDescription": "Per leggere e creare eventi nel Calendario.",
         "NSRemindersFullAccessUsageDescription": "Per gestire i promemoria.",

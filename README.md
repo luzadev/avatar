@@ -72,6 +72,7 @@ Altri plugin inclusi, tutti locali:
 | `buongiorno` | riepilogo: impegni, promemoria, email, meteo | "buongiorno", "come si presenta la giornata" |
 | `whatsapp_archivio` | chat WhatsApp esportate: importazione, ricerca full-text, lettura per periodo, statistiche | "cosa mi ha detto Marco sulla riunione?", "riassumi la chat con Anna dell'ultima settimana", "quando abbiamo parlato del dentista?" |
 | `whatsapp_live` | WhatsApp in tempo reale come dispositivo collegato (Baileys): novità, invio con conferma, annunci vocali | "ci sono novità su WhatsApp?", "chi mi ha scritto?", "scrivi a Marco su WhatsApp che arrivo" |
+| `visione` | webcam, schermo intero o finestra in primo piano: immagine per i motori con visione (Claude API, Claude Code) più testo riconosciuto per tutti | "cosa vedi?", "cosa c'è sullo schermo?", "leggi questo errore", "riassumi questa finestra" |
 | `telegram` | Telegram con il tuo account (Telethon): non letti, lettura, ricerca, invio con conferma | "ho messaggi su Telegram?", "leggimi la chat con Anna", "scrivi a Luca su Telegram che sono in ritardo" |
 
 **WhatsApp in tempo reale** usa un client non ufficiale (Baileys, in `whatsapp_bridge/`, Node.js) collegato come "dispositivo collegato". È contro i termini di WhatsApp e Meta può bloccare il numero: l'app non invia mai senza conferma e non fa azioni di massa, ma il rischio resta a carico di chi lo attiva. Per collegarlo: "Motore e Voce" › WhatsApp › "Collega (QR)", poi sul telefono WhatsApp › Impostazioni › Dispositivi collegati › Collega un dispositivo. Da quel momento i messaggi in arrivo (e quelli che invii da altri dispositivi) finiscono nell'archivio, in tempo reale; con "Annuncia a voce" l'assistente li legge appena arrivano. Il ponte parte da solo all'avvio dell'app una volta collegato. Richiede Node.js (`npm install` in `whatsapp_bridge/` è già fatto).
@@ -88,7 +89,7 @@ Per scriverne uno nuovo copia la struttura di `plugins/calendario.py`: una lista
 
 - macOS su Apple Silicon, Python 3.12, [uv](https://docs.astral.sh/uv/).
 - `brew install espeak-ng portaudio` (fonetica italiana per Kokoro e audio).
-- Permessi macOS richiesti al primo uso: Microfono, Calendario, Promemoria, Contatti, Automazione; per leggere SMS e iMessage serve «Accesso completo al disco» all'app (Impostazioni di Sistema › Privacy e sicurezza).
+- Permessi macOS richiesti al primo uso: Microfono, Fotocamera, Registrazione schermo, Calendario, Promemoria, Contatti, Automazione; per leggere SMS e iMessage serve «Accesso completo al disco» all'app (Impostazioni di Sistema › Privacy e sicurezza).
 - Per il motore Claude Code: Claude Code installato e collegato.
 
 ## Avvio
