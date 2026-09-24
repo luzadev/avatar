@@ -4,8 +4,8 @@ from __future__ import annotations
 import threading
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                             QPushButton, QStackedWidget, QVBoxLayout, QWidget, QDoubleSpinBox)
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
+                             QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget, QDoubleSpinBox)
 
 from .engines.claude_code import check_claude_code
 from .engines.openai_compat import list_models
@@ -13,7 +13,7 @@ from .settings import Settings
 from .tts import KOKORO_VOICES, SystemVoice
 
 STYLE = """
-QDialog { background: #030a10; color: #cfe8ff; }
+QDialog, QScrollArea, QScrollArea > QWidget > QWidget { background: #030a10; color: #cfe8ff; }
 QLabel { color: #8fb8d8; font-family: 'Menlo'; font-size: 14px; }
 QLineEdit, QComboBox, QDoubleSpinBox { background: #000d12; color: #e6f4ff; border: 1px solid #12354a; border-radius: 3px; padding: 4px 6px; font-family: 'Menlo'; font-size: 14px; }
 QLineEdit:focus, QComboBox:focus { border: 1px solid #3fd0ff; }
@@ -49,9 +49,11 @@ class SettingsDialog(QDialog):
         self.settings, self.on_saved = settings, on_saved
         self.setWindowTitle("Motore & Voce")
         self.setStyleSheet(STYLE)
-        self.setMinimumWidth(620)
+        self.setMinimumWidth(720)
         s = settings
-        root = QVBoxLayout(self)
+        # Contenuto scorrevole; i pulsanti Salva/Annulla restano fissi in basso.
+        content = QWidget()
+        root = QVBoxLayout(content)
 
         form = QFormLayout()
         self.provider = _combo(PROVIDERS, s.get("provider"))
@@ -207,7 +209,13 @@ class SettingsDialog(QDialog):
         btns = QHBoxLayout(); btns.addStretch()
         cancel = QPushButton("Annulla"); cancel.clicked.connect(self.reject); btns.addWidget(cancel)
         save = QPushButton("Salva"); save.setObjectName("primary"); save.clicked.connect(self._save); btns.addWidget(save)
-        root.addLayout(btns)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(content); scroll.setFrameShape(QFrame.Shape.NoFrame)
+        outer = QVBoxLayout(self); outer.setContentsMargins(10, 10, 10, 10)
+        outer.addWidget(scroll, 1)
+        outer.addLayout(btns)
+        screen = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
+        h = int(screen.height() * 0.85) if screen else 800
+        self.resize(820, min(900, h))
         self._async.connect(self._on_async)
         self._check_cc()
 
