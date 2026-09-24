@@ -26,7 +26,7 @@ DEFAULTS: dict[str, Any] = {
     "kokoro_voice": "if_sara",
     "chatterbox_exaggeration": 0.6,    # 0.3 sobria … 0.9 molto enfatica
     "chatterbox_cfg": 0.3,             # più basso = più veloce e meno aderente al testo
-    "chatterbox_ref": "",              # wav di riferimento per clonare una voce (facoltativo)
+    "chatterbox_ref": "preset:femminile",  # preset:femminile | preset:maschile | percorso di un wav da imitare
     "system_voice": "",                 # "" = automatica
     "stt_model": "mlx-community/whisper-small-mlx",
     "vad_threshold": 0.08,

@@ -179,10 +179,33 @@ class ChatterboxVoice:
         finally:
             self._on_status(None)
 
+    REFERENCE_TEXT = ("Ciao, sono la voce del tuo assistente. Oggi ti racconto come è andata la giornata, con calma e con un po' di allegria. "
+                      "Se hai bisogno di qualcosa, basta chiedere: sono qui per aiutarti, e mi fa piacere farlo.")
+    PRESETS = {"preset:femminile": "if_sara", "preset:maschile": "im_nicola"}
+
+    def _reference_path(self) -> str | None:
+        """File wav di riferimento: percorso dell'utente, oppure preset generato con Kokoro (una volta)."""
+        ref = (self.ref_audio or "").strip()
+        if not ref:
+            return None
+        if ref in self.PRESETS:
+            from pathlib import Path as _P
+            import soundfile as sf
+            out = _P(__file__).resolve().parent.parent / "data" / "voices" / f"{ref.split(':')[1]}.wav"
+            if not out.exists():
+                out.parent.mkdir(parents=True, exist_ok=True)
+                self._on_status("Preparo il campione di voce per Chatterbox…")
+                k = KokoroVoice(self.PRESETS[ref], speed=0.95)
+                k.load()
+                sf.write(str(out), k.synthesize(self.REFERENCE_TEXT), OUT_RATE)
+                self._on_status(None)
+            return str(out)
+        return ref
+
     def synthesize(self, text: str) -> np.ndarray:
         import requests
         r = requests.post(f"http://127.0.0.1:{self.PORT}/tts", json={"text": text, "language": "it", "exaggeration": self.exaggeration,
-                                                                     "cfg": self.cfg, "ref": self.ref_audio or None}, timeout=600)
+                                                                     "cfg": self.cfg, "ref": self._reference_path()}, timeout=600)
         if r.status_code != 200:
             raise RuntimeError(r.json().get("error", r.text))
         sr = int(r.headers.get("X-Sample-Rate", "24000"))
