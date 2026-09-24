@@ -7,7 +7,7 @@ L'interfaccia è riusata con licenza CC BY-NC 4.0 (uso personale, non commercial
 ## Cosa fa
 
 - **Conversazione a mani libere**: il microfono è sempre in ascolto; quando smetti di parlare, la frase viene trascrizione in locale (Whisper via MLX) e inviata al motore. In alternativa: premi-per-parlare, parola di attivazione "Hey Jarvis" (openwakeword, installabile dal pannello), o il campo di testo.
-- **Voce**: Kokoro in locale con le voci italiane Sara e Nicola (PyTorch), oppure la voce di sistema di macOS. Le frasi vengono sintetizzate in anticipo mentre l'app pronuncia la precedente.
+- **Voce**: tre motori. *Kokoro* in locale con le voci italiane Sara e Nicola, veloce e naturale (predefinito). *Chatterbox* (Resemble AI), espressivo, con controllo dell'enfasi e clonazione da un wav di riferimento: gira in un ambiente Python separato (`.venv-chatterbox`, creato con `uv venv .venv-chatterbox --python 3.12 && uv pip install --python .venv-chatterbox/bin/python chatterbox-tts "setuptools<81"`) come servizio locale avviato dall'app, scarica circa 2 GB al primo uso e su Apple Silicon genera a circa un terzo del tempo reale, quindi con pause di alcuni secondi tra le frasi. *Voce di sistema* di macOS. Le frasi vengono sintetizzate in anticipo mentre l'app pronuncia la precedente.
 - **Volto**: la bocca segue lo spettro dell'audio (50 forme al secondo) fuso con il testo pronunciato; lo sguardo e le sopracciglia seguono lo stato (ascolta, pensa, parla, dorme).
 - **Tre motori**, selezionabili dal pulsante "Motore & Voce":
   - *Claude (Anthropic)*: Claude Opus 5 via API, con ricerca web server-side. Serve una chiave, salvata nel portachiavi di macOS.
@@ -137,7 +137,8 @@ avatar/
   audio.py                 microfono con rilevamento della voce; riproduzione con visemi
   lipsync.py               livello audio e forme della bocca dallo spettro
   stt.py                   Whisper (MLX, ripiego su faster-whisper)
-  tts.py                   Kokoro e voce di sistema, spezzettamento in frasi
+  tts.py                   Kokoro, Chatterbox (servizio) e voce di sistema, spezzettamento in frasi
+tts_chatterbox/            servizio Chatterbox (ambiente isolato)
   memory_tools.py          strumenti di memoria comuni ai motori
   memory_mcp.py            server MCP che espone la memoria a Claude Code
   websearch.py             ricerca Brave (motore locale)
