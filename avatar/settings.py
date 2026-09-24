@@ -26,6 +26,10 @@ DEFAULTS: dict[str, Any] = {
     "kokoro_voice": "if_sara",
     "chatterbox_exaggeration": 0.6,    # 0.3 sobria … 0.9 molto enfatica
     "chatterbox_cfg": 0.3,             # più basso = più veloce e meno aderente al testo
+    "elevenlabs_voice_id": "",
+    "elevenlabs_model": "eleven_flash_v2_5",   # rapido; eleven_multilingual_v2 = qualità massima
+    "elevenlabs_stability": 0.45,
+    "elevenlabs_style": 0.3,
     "chatterbox_ref": "preset:femminile",  # preset:femminile | preset:maschile | percorso di un wav da imitare
     "system_voice": "",                 # "" = automatica
     "stt_model": "mlx-community/whisper-small-mlx",
@@ -41,7 +45,7 @@ DEFAULTS: dict[str, Any] = {
     "monitor_escludi": "",             # parole/frasi (separate da virgola) che escludono un messaggio dagli avvisi
 }
 
-SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash")
+SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash", "elevenlabs_api_key")
 
 
 class Settings:

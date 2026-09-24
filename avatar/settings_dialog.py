@@ -99,7 +99,7 @@ class SettingsDialog(QDialog):
         self.stack.setCurrentIndex(self.provider.currentIndex())
 
         form2 = QFormLayout()
-        self.tts_engine = _combo([("kokoro", "Kokoro, voce neurale in locale"), ("chatterbox", "Chatterbox, espressiva in locale (lenta)"), ("system", "Voce di sistema (macOS)")], s.get("tts_engine"))
+        self.tts_engine = _combo([("kokoro", "Kokoro, voce neurale in locale"), ("elevenlabs", "ElevenLabs, espressiva nel cloud (chiave API)"), ("chatterbox", "Chatterbox, espressiva in locale (lenta)"), ("system", "Voce di sistema (macOS)")], s.get("tts_engine"))
         form2.addRow("Motore voce", self.tts_engine)
         self.kokoro_voice = _combo(list(KOKORO_VOICES.items()), s.get("kokoro_voice")); form2.addRow("Voce Kokoro", self.kokoro_voice)
         self.system_voice = _combo([("", "Automatica (Alice)")] + [(v, v) for v in SystemVoice.list_voices()], s.get("system_voice"))
@@ -115,6 +115,20 @@ class SettingsDialog(QDialog):
         row.addWidget(QLabel("voce")); row.addWidget(self.cb_voice)
         self.cb_ref = QLineEdit(cur_ref if cur_ref.startswith("/") or cur_ref.startswith("~") else ""); self.cb_ref.setPlaceholderText("percorso di un wav di 10 secondi con la voce da imitare"); row.addWidget(self.cb_ref, 1)
         form2.addRow("Voce Chatterbox", row)
+        row = QHBoxLayout()
+        self.el_key = QLineEdit(); self.el_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.el_key.setPlaceholderText("•••••• (salvata)" if s.get_secret("elevenlabs_api_key") else "chiave API da elevenlabs.io"); row.addWidget(self.el_key, 1)
+        self.el_voice = QComboBox(); self.el_voice.setMinimumWidth(220); row.addWidget(self.el_voice, 1)
+        b = QPushButton("Carica voci"); b.clicked.connect(self._el_voices); row.addWidget(b)
+        form2.addRow("ElevenLabs", row)
+        row = QHBoxLayout()
+        self.el_model = _combo([("eleven_flash_v2_5", "Flash v2.5 (rapido)"), ("eleven_multilingual_v2", "Multilingual v2 (qualità)"), ("eleven_v3", "v3 (più espressivo, sperimentale)")], s.get("elevenlabs_model")); row.addWidget(QLabel("modello")); row.addWidget(self.el_model)
+        self.el_stab = QDoubleSpinBox(); self.el_stab.setRange(0.0, 1.0); self.el_stab.setSingleStep(0.05); self.el_stab.setValue(float(s.get("elevenlabs_stability", 0.45))); row.addWidget(QLabel("stabilità")); row.addWidget(self.el_stab)
+        self.el_style = QDoubleSpinBox(); self.el_style.setRange(0.0, 1.0); self.el_style.setSingleStep(0.05); self.el_style.setValue(float(s.get("elevenlabs_style", 0.3))); row.addWidget(QLabel("stile")); row.addWidget(self.el_style)
+        row.addStretch()
+        form2.addRow("", row)
+        self._el_current = str(s.get("elevenlabs_voice_id") or "")
+        self.el_voice.addItem("(carica le voci con la chiave)" if not self._el_current else f"voce salvata: {self._el_current[:10]}…", self._el_current)
         self.stt_model = _combo(STT_MODELS, s.get("stt_model")); form2.addRow("Riconoscimento vocale", self.stt_model)
         from .avatar3d import list_models
         models = list_models()
@@ -299,7 +313,30 @@ class SettingsDialog(QDialog):
                 self._async.emit("wa", (f"Errore: {err}", None))
         threading.Thread(target=work, daemon=True).start()
 
+    def _el_voices(self) -> None:
+        key = self.el_key.text().strip() or self.settings.get_secret("elevenlabs_api_key")
+        if not key:
+            self.el_voice.clear(); self.el_voice.addItem("inserisci prima la chiave API", ""); return
+        if self.el_key.text().strip():
+            self.settings.update({"elevenlabs_api_key": key})
+        def work():
+            try:
+                from .tts import ElevenLabsVoice
+                self._async.emit("el", ElevenLabsVoice.list_voices(key))
+            except Exception as err:
+                self._async.emit("el_error", str(err)[:120])
+        threading.Thread(target=work, daemon=True).start()
+
     def _on_async(self, kind: str, payload) -> None:
+        if kind == "el":
+            self.el_voice.clear()
+            for vid, label in payload:
+                self.el_voice.addItem(label, vid)
+            idx = self.el_voice.findData(self._el_current)
+            self.el_voice.setCurrentIndex(idx if idx >= 0 else 0)
+            return
+        if kind == "el_error":
+            self.el_voice.clear(); self.el_voice.addItem(f"errore: {payload}", ""); return
         if kind == "wa":
             msg, png = payload
             self.wa_hint.setText(str(msg))
@@ -352,6 +389,8 @@ class SettingsDialog(QDialog):
             "claudecode_config_dir": self.cc_config.currentText().strip(), "claudecode_path": self.cc_path.text().strip(),
             "tts_engine": self.tts_engine.currentData(), "kokoro_voice": self.kokoro_voice.currentData(),
             "system_voice": self.system_voice.currentData(), "stt_model": self.stt_model.currentData(),
+            "elevenlabs_voice_id": self.el_voice.currentData() or "", "elevenlabs_model": self.el_model.currentData(),
+            "elevenlabs_stability": float(self.el_stab.value()), "elevenlabs_style": float(self.el_style.value()),
             "chatterbox_exaggeration": float(self.cb_exag.value()), "chatterbox_cfg": float(self.cb_cfg.value()),
             "chatterbox_ref": (self.cb_ref.text().strip() if self.cb_voice.currentData() == "custom" else self.cb_voice.currentData()),
             "vad_threshold": float(self.vad.value()),
@@ -371,6 +410,8 @@ class SettingsDialog(QDialog):
             values["anthropic_api_key"] = self.api_key.text().strip()
         if self.local_key.text().strip():
             values["local_api_key"] = self.local_key.text().strip()
+        if self.el_key.text().strip():
+            values["elevenlabs_api_key"] = self.el_key.text().strip()
         self.settings.update(values)
         self.accept()
         if self.on_saved:

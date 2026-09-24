@@ -221,7 +221,56 @@ class ChatterboxVoice:
         cls._proc = None
 
 
+class ElevenLabsVoice:
+    """ElevenLabs (cloud): voci molto espressive, prima parola in circa mezzo secondo."""
+
+    API = "https://api.elevenlabs.io/v1"
+
+    def __init__(self, api_key: str, voice_id: str, model: str = "eleven_flash_v2_5", stability: float = 0.45, similarity: float = 0.8, style: float = 0.3) -> None:
+        self.api_key, self.voice_id, self.model = api_key, voice_id, model
+        self.stability, self.similarity, self.style = stability, similarity, style
+        self.voice = f"elevenlabs:{voice_id}:{model}:{stability}:{style}"
+
+    @classmethod
+    def list_voices(cls, api_key: str) -> list[tuple[str, str]]:
+        import requests
+        r = requests.get(f"{cls.API}/voices", headers={"xi-api-key": api_key}, timeout=15)
+        r.raise_for_status()
+        out = []
+        for v in r.json().get("voices", []):
+            labels = v.get("labels") or {}
+            desc = ", ".join(x for x in (labels.get("gender"), labels.get("accent"), labels.get("language"), v.get("category")) if x)
+            out.append((v["voice_id"], f"{v['name']}" + (f" ({desc})" if desc else "")))
+        return out
+
+    def load(self) -> None:
+        if not self.api_key:
+            raise RuntimeError("ElevenLabs: manca la chiave API (Motore e Voce).")
+        if not self.voice_id:
+            raise RuntimeError("ElevenLabs: scegli una voce in Motore e Voce (pulsante «Carica voci»).")
+
+    def synthesize(self, text: str) -> np.ndarray:
+        import requests
+        r = requests.post(f"{self.API}/text-to-speech/{self.voice_id}", params={"output_format": "pcm_24000"},
+                          headers={"xi-api-key": self.api_key, "Content-Type": "application/json"},
+                          json={"text": text, "model_id": self.model, "language_code": "it",
+                                "voice_settings": {"stability": self.stability, "similarity_boost": self.similarity, "style": self.style, "use_speaker_boost": True}},
+                          timeout=60)
+        if r.status_code != 200:
+            try:
+                detail = r.json().get("detail", {})
+                msg = detail.get("message") if isinstance(detail, dict) else str(detail)
+            except Exception:
+                msg = r.text[:200]
+            raise RuntimeError(f"ElevenLabs {r.status_code}: {msg}")
+        return np.frombuffer(r.content, dtype=np.int16).astype(np.float32) / 32768.0
+
+
 def make_voice(settings, on_status=None):
+    if settings.get("tts_engine") == "elevenlabs":
+        return ElevenLabsVoice(settings.get_secret("elevenlabs_api_key"), str(settings.get("elevenlabs_voice_id") or ""),
+                               str(settings.get("elevenlabs_model") or "eleven_flash_v2_5"),
+                               float(settings.get("elevenlabs_stability", 0.45)), 0.8, float(settings.get("elevenlabs_style", 0.3)))
     if settings.get("tts_engine") == "chatterbox":
         return ChatterboxVoice(float(settings.get("chatterbox_exaggeration", 0.6)), float(settings.get("chatterbox_cfg", 0.3)),
                                str(settings.get("chatterbox_ref", "") or ""), on_status=on_status)
