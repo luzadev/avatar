@@ -38,9 +38,9 @@ def finestra(params: dict, ctx: dict) -> str:
 
 
 TOOLS = [
-    {"name": "guarda_webcam", "description": "Scatta un fotogramma dalla webcam per vedere l'utente e l'ambiente attorno a lui. Usalo per 'cosa vedi?', 'guarda questo', 'come sto?'.",
+    {"name": "guarda_webcam", "description": "Scatta un fotogramma dalla webcam per vedere l'utente e l'ambiente attorno a lui. È lo strumento da usare per le domande generiche: 'cosa vedi?', 'guardami', 'guarda questo', 'come sto?', 'cosa c'è qui?', 'che oggetto è questo?'. NON usare lo schermo per queste domande.",
      "parameters": {"type": "object", "properties": {}}, "run": webcam},
-    {"name": "guarda_schermo", "description": "Cattura lo schermo del Mac per vedere cosa c'è aperto: 'cosa c'è sullo schermo?', 'leggi questo errore', 'riassumi questa pagina'.",
+    {"name": "guarda_schermo", "description": "Cattura lo schermo del Mac. Usalo SOLO quando l'utente parla esplicitamente dello schermo, di una finestra, di un errore a video o di una pagina aperta: 'cosa c'è sullo schermo?', 'leggi questo errore', 'riassumi questa pagina'. Per 'cosa vedi?' usa guarda_webcam.",
      "parameters": {"type": "object", "properties": {"tutti_gli_schermi": {"type": "boolean"}}}, "run": schermo},
     {"name": "guarda_finestra", "description": "Cattura solo la finestra dell'app in primo piano (più leggibile dello schermo intero).",
      "parameters": {"type": "object", "properties": {}}, "run": finestra},
