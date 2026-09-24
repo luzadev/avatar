@@ -99,11 +99,16 @@ class SettingsDialog(QDialog):
         self.stack.setCurrentIndex(self.provider.currentIndex())
 
         form2 = QFormLayout()
-        self.tts_engine = _combo([("kokoro", "Kokoro, voce neurale in locale"), ("system", "Voce di sistema (macOS)")], s.get("tts_engine"))
+        self.tts_engine = _combo([("kokoro", "Kokoro, voce neurale in locale"), ("chatterbox", "Chatterbox, espressiva in locale (lenta)"), ("system", "Voce di sistema (macOS)")], s.get("tts_engine"))
         form2.addRow("Motore voce", self.tts_engine)
         self.kokoro_voice = _combo(list(KOKORO_VOICES.items()), s.get("kokoro_voice")); form2.addRow("Voce Kokoro", self.kokoro_voice)
         self.system_voice = _combo([("", "Automatica (Alice)")] + [(v, v) for v in SystemVoice.list_voices()], s.get("system_voice"))
         form2.addRow("Voce di sistema", self.system_voice)
+        row = QHBoxLayout()
+        self.cb_exag = QDoubleSpinBox(); self.cb_exag.setRange(0.2, 1.0); self.cb_exag.setSingleStep(0.1); self.cb_exag.setValue(float(s.get("chatterbox_exaggeration", 0.6))); row.addWidget(QLabel("enfasi")); row.addWidget(self.cb_exag)
+        self.cb_cfg = QDoubleSpinBox(); self.cb_cfg.setRange(0.0, 1.0); self.cb_cfg.setSingleStep(0.1); self.cb_cfg.setValue(float(s.get("chatterbox_cfg", 0.3))); row.addWidget(QLabel("aderenza (0 = più veloce)")); row.addWidget(self.cb_cfg)
+        self.cb_ref = QLineEdit(s.get("chatterbox_ref") or ""); self.cb_ref.setPlaceholderText("wav di riferimento per clonare una voce (facoltativo)"); row.addWidget(self.cb_ref, 1)
+        form2.addRow("Chatterbox", row)
         self.stt_model = _combo(STT_MODELS, s.get("stt_model")); form2.addRow("Riconoscimento vocale", self.stt_model)
         from .avatar3d import list_models
         models = list_models()
@@ -341,6 +346,7 @@ class SettingsDialog(QDialog):
             "claudecode_config_dir": self.cc_config.currentText().strip(), "claudecode_path": self.cc_path.text().strip(),
             "tts_engine": self.tts_engine.currentData(), "kokoro_voice": self.kokoro_voice.currentData(),
             "system_voice": self.system_voice.currentData(), "stt_model": self.stt_model.currentData(),
+            "chatterbox_exaggeration": float(self.cb_exag.value()), "chatterbox_cfg": float(self.cb_cfg.value()), "chatterbox_ref": self.cb_ref.text().strip(),
             "vad_threshold": float(self.vad.value()),
             "avatar_model": self.avatar_model.currentData() or "",
             "telegram_api_id": self.tg_id.text().strip(),

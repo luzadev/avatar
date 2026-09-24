@@ -132,7 +132,76 @@ class SystemVoice:
         return data
 
 
+class ChatterboxVoice:
+    """Chatterbox (Resemble AI) in un ambiente separato, avviato come servizio locale."""
+
+    PORT = 8792
+    _proc = None
+
+    def __init__(self, exaggeration: float = 0.6, cfg: float = 0.3, ref_audio: str = "", on_status=None) -> None:
+        self.exaggeration, self.cfg, self.ref_audio = exaggeration, cfg, ref_audio
+        self.voice = f"chatterbox:{exaggeration}:{cfg}:{ref_audio}"
+        self._on_status = on_status or (lambda m: None)
+
+    @classmethod
+    def _start(cls) -> None:
+        import subprocess
+        from pathlib import Path as _P
+        if cls._proc is not None and cls._proc.poll() is None:
+            return
+        base = _P(__file__).resolve().parent.parent
+        python = base / ".venv-chatterbox" / "bin" / "python"
+        if not python.exists():
+            raise RuntimeError("Chatterbox non installato: esegui `uv venv .venv-chatterbox --python 3.12 && uv pip install --python .venv-chatterbox/bin/python chatterbox-tts 'setuptools<81'`.")
+        log = open(base / "data" / "chatterbox.log", "a")
+        cls._proc = subprocess.Popen([str(python), str(base / "tts_chatterbox" / "server.py"), "--port", str(cls.PORT)],
+                                     stdout=log, stderr=subprocess.STDOUT, cwd=str(base))
+
+    def load(self) -> None:
+        import requests
+        import time as _t
+        self._start()
+        self._on_status("Avvio Chatterbox (la prima volta scarica il modello, circa 2 GB)…")
+        try:
+            for _ in range(600):   # fino a 10 minuti (download iniziale)
+                try:
+                    st = requests.get(f"http://127.0.0.1:{self.PORT}/", timeout=3).json()
+                    if st.get("ready"):
+                        return
+                    if st.get("error"):
+                        raise RuntimeError(st["error"])
+                except requests.RequestException:
+                    pass
+                if self._proc is not None and self._proc.poll() is not None:
+                    raise RuntimeError("Il servizio Chatterbox si è chiuso: vedi data/chatterbox.log.")
+                _t.sleep(1)
+            raise RuntimeError("Chatterbox non è pronto.")
+        finally:
+            self._on_status(None)
+
+    def synthesize(self, text: str) -> np.ndarray:
+        import requests
+        r = requests.post(f"http://127.0.0.1:{self.PORT}/tts", json={"text": text, "language": "it", "exaggeration": self.exaggeration,
+                                                                     "cfg": self.cfg, "ref": self.ref_audio or None}, timeout=600)
+        if r.status_code != 200:
+            raise RuntimeError(r.json().get("error", r.text))
+        sr = int(r.headers.get("X-Sample-Rate", "24000"))
+        data = np.frombuffer(r.content, dtype=np.float32)
+        if sr != OUT_RATE:
+            data = np.interp(np.arange(0, data.size, sr / OUT_RATE), np.arange(data.size), data).astype(np.float32)
+        return data
+
+    @classmethod
+    def stop(cls) -> None:
+        if cls._proc is not None and cls._proc.poll() is None:
+            cls._proc.terminate()
+        cls._proc = None
+
+
 def make_voice(settings, on_status=None):
+    if settings.get("tts_engine") == "chatterbox":
+        return ChatterboxVoice(float(settings.get("chatterbox_exaggeration", 0.6)), float(settings.get("chatterbox_cfg", 0.3)),
+                               str(settings.get("chatterbox_ref", "") or ""), on_status=on_status)
     if settings.get("tts_engine") == "system":
         return SystemVoice(settings.get("system_voice", ""))
     return KokoroVoice(settings.get("kokoro_voice", "if_sara"), on_status=on_status)

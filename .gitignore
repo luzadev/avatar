@@ -19,3 +19,5 @@ avatar3d/models_archivio/
 # Varie
 *.log
 .DS_Store
+.venv-chatterbox/
+tts_chatterbox/test_*.py
