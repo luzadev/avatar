@@ -45,6 +45,7 @@ def claude_env(config_dir: str) -> dict:
     env.pop("CLAUDECODE", None)
     if config_dir.strip():
         env["CLAUDE_CONFIG_DIR"] = config_dir.strip()
+    env.setdefault("MCP_TOOL_TIMEOUT", "900000")   # strumenti lenti (es. assistenza server): fino a 15 minuti
     return env
 
 

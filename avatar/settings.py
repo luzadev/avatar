@@ -46,6 +46,9 @@ DEFAULTS: dict[str, Any] = {
     "monitor_intervallo": 60,          # secondi tra un controllo e l'altro
     "monitor_regole": "",              # cosa merita attenzione (vuoto = regole predefinite)
     "monitor_escludi": "",             # parole/frasi (separate da virgola) che escludono un messaggio dagli avvisi
+    "server_assist_ssh": "",           # utente@host del server ponte (assistenza server), es. root@1.2.3.4
+    "server_assist_dir": "/opt/aiserverassistance",   # cartella del bot sul server ponte (contiene .env)
+    "server_assist_bot": "luzaserver_bot",            # username Telegram del bot sysadmin
 }
 
 SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash", "elevenlabs_api_key")

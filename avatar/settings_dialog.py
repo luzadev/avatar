@@ -204,6 +204,17 @@ class SettingsDialog(QDialog):
         add(pg_msg, form4)
         threading.Thread(target=lambda: self._async.emit("wa", (self._wa_status(), None)), daemon=True).start()
 
+        # ── Assistenza server (bot sysadmin + monitoraggio Sentinella) ────
+        form_srv = QFormLayout()
+        form_srv.addRow(QLabel("Assistenza server: bot Telegram sysadmin e monitoraggio Sentinella sul server ponte (accesso SSH con chiave)"))
+        self.srv_ssh = QLineEdit(str(s.get("server_assist_ssh") or "")); self.srv_ssh.setPlaceholderText("root@host del server ponte")
+        form_srv.addRow("SSH server ponte", self.srv_ssh)
+        self.srv_dir = QLineEdit(str(s.get("server_assist_dir") or "")); self.srv_dir.setPlaceholderText("/opt/aiserverassistance")
+        form_srv.addRow("Cartella del bot sul server", self.srv_dir)
+        self.srv_bot = QLineEdit(str(s.get("server_assist_bot") or "")); self.srv_bot.setPlaceholderText("luzaserver_bot")
+        form_srv.addRow("Username del bot Telegram", self.srv_bot)
+        add(pg_msg, form_srv)
+
         # ── Monitor avvisi ────────────────────────────────────────────────
         form5 = QFormLayout()
         row = QHBoxLayout()
@@ -452,6 +463,9 @@ class SettingsDialog(QDialog):
             "monitor_intervallo": int(self.mon_int.currentData() or 60),
             "monitor_regole": self.mon_rules.text().strip(),
             "monitor_escludi": self.mon_excl.text().strip(),
+            "server_assist_ssh": self.srv_ssh.text().strip(),
+            "server_assist_dir": self.srv_dir.text().strip() or "/opt/aiserverassistance",
+            "server_assist_bot": self.srv_bot.text().strip().lstrip("@") or "luzaserver_bot",
         }
         if self.tg_hash.text().strip():
             values["telegram_api_hash"] = self.tg_hash.text().strip()
