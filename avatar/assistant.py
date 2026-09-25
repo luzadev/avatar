@@ -14,6 +14,7 @@ from .audio import Microphone, Player
 from .engines.anthropic_engine import AnthropicEngine
 from .engines.claude_code import ClaudeCodeEngine
 from .engines.openai_compat import OpenAICompatEngine
+from .engines.mlx_engine import MLXEngine
 from .settings import CONFIG_DIR, Settings
 from .stt import Transcriber
 from .tts import SentenceSplitter, clean_for_speech, make_voice
@@ -180,14 +181,18 @@ class Assistant:
         s = self.settings
         provider = s.get("provider")
         self.name, self.user_name = _identity()
-        key = (provider, s.get("effort"), s.get("local_base_url"), s.get("local_model"), s.get("search_api_key"),
+        key = (provider, s.get("effort"), s.get("local_base_url"), s.get("local_model"), s.get("mlx_model"), s.get("search_api_key"),
                s.get("claudecode_model"), s.get("claudecode_access"), s.get("claudecode_config_dir"),
                s.get("claudecode_path"), self.name, self.user_name, s.get_secret("anthropic_api_key")[-6:],
                s.get_secret("local_api_key")[-4:])
         if self._engine and self._engine_key == key:
             return self._engine
-        self._engine, self._engine_key = None, key
-        if provider == "local":
+        old, self._engine, self._engine_key = self._engine, None, key
+        if old is not None and hasattr(old, "close"):
+            old.close()   # libera il modello interno dalla memoria
+        if provider == "mlx":
+            self._engine = MLXEngine(s.get("mlx_model") or "", s.get("search_api_key"), self.name, self.user_name)
+        elif provider == "local":
             if s.get("local_base_url") and s.get("local_model"):
                 self._engine = OpenAICompatEngine(s.get("local_base_url"), s.get("local_model"), s.get_secret("local_api_key"),
                                                   s.get("search_api_key"), self.name, self.user_name)

@@ -26,7 +26,8 @@ QPushButton#primary { background: #0a4a66; color: #ffffff; }
 """
 
 PROVIDERS = [("anthropic", "Claude (Anthropic, cloud)"), ("local", "Server locale compatibile OpenAI (vLLM, Ollama…)"),
-             ("claudecode", "Claude Code (il tuo accesso, nessuna chiave)")]
+             ("claudecode", "Claude Code (il tuo accesso, nessuna chiave)"),
+             ("mlx", "Modello interno (MLX, gira dentro l'app)")]
 EFFORTS = [("low", "Veloce"), ("medium", "Bilanciata"), ("high", "Approfondita")]
 ACCESS = [("chat", "Solo conversazione e ricerca web"), ("read", "Leggere file e cercare nelle cartelle"),
           ("full", "Completo: modifica file ed esegue comandi senza chiedere")]
@@ -73,6 +74,9 @@ class SettingsDialog(QDialog):
         form.addRow("Motore", self.provider)
         self.effort = _combo(EFFORTS, s.get("effort"))
         form.addRow("Profondità di ragionamento (Claude e Claude Code)", self.effort)
+        self.search_key = QLineEdit(s.get("search_api_key")); self.search_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.search_key.setPlaceholderText("opzionale, per i motori locali: senza chiave la ricerca web resta spenta")
+        form.addRow("Chiave Brave Search (server locale e modello interno)", self.search_key)
         add(pg_motore, form)
 
         self.stack = QStackedWidget()
@@ -93,9 +97,6 @@ class SettingsDialog(QDialog):
         b = QPushButton("Rileva"); b.clicked.connect(self._detect_models); row.addWidget(b)
         f.addRow("Modello", row)
         self.local_hint = QLabel("Premi \"Rileva\" per leggere i modelli dal server."); f.addRow("", self.local_hint)
-        self.search_key = QLineEdit(s.get("search_api_key")); self.search_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.search_key.setPlaceholderText("opzionale: senza chiave la ricerca web resta spenta")
-        f.addRow("Chiave Brave Search", self.search_key)
         self.stack.addWidget(w)
         # Claude Code
         w = QWidget(); f = QFormLayout(w)
@@ -108,6 +109,18 @@ class SettingsDialog(QDialog):
         self.cc_hint = QLabel(""); self.cc_hint.setWordWrap(True); f.addRow("", self.cc_hint)
         self.cc_path = QLineEdit(s.get("claudecode_path")); self.cc_path.setPlaceholderText("vuoto = automatico")
         f.addRow("Percorso del comando claude", self.cc_path)
+        self.stack.addWidget(w)
+        # Modello interno (MLX)
+        from .engines.mlx_engine import cached_models, DEFAULT_MODEL
+        w = QWidget(); f = QFormLayout(w)
+        self.mlx_model = QComboBox(); self.mlx_model.setEditable(True)
+        self.mlx_model.addItems(cached_models() or [DEFAULT_MODEL])
+        self.mlx_model.setEditText(s.get("mlx_model") or DEFAULT_MODEL)
+        f.addRow("Modello (repo Hugging Face mlx-community)", self.mlx_model)
+        hint = QLabel("Elenco: modelli già scaricati. Un nome nuovo viene scaricato al primo uso. "
+                      "Con 32 GB di RAM: modelli fino a ~20 GB in 4 bit (Qwen3-30B-A3B è veloce e supporta gli strumenti). "
+                      "Non tenere aperto anche VLLMac con lo stesso modello.")
+        hint.setWordWrap(True); f.addRow("", hint)
         self.stack.addWidget(w)
         add(pg_motore, self.stack)
         self.provider.currentIndexChanged.connect(self.stack.setCurrentIndex)
@@ -443,6 +456,7 @@ class SettingsDialog(QDialog):
         values = {
             "provider": self.provider.currentData(), "effort": self.effort.currentData(),
             "local_base_url": self.local_url.text().strip().rstrip("/"), "local_model": self.local_model.currentText().strip(),
+            "mlx_model": self.mlx_model.currentText().strip(),
             "search_api_key": self.search_key.text().strip(),
             "claudecode_model": self.cc_model.currentData(), "claudecode_access": self.cc_access.currentData(),
             "claudecode_config_dir": self.cc_config.currentText().strip(), "claudecode_path": self.cc_path.text().strip(),

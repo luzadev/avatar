@@ -98,7 +98,7 @@ class OpenAICompatEngine:
                      else "\n- Non hai accesso al web: se ti chiedono informazioni aggiornate, dillo chiaramente.")
         else:
             note = "\n\nNota: in questa modalità non hai strumenti (niente memoria automatica né ricerca web)."
-        return {"role": "system", "content": f"{persona_text(self.assistant_name)}\n\n{user_block(self.user_name, memory_prompt())}\n\nAdesso è {today_label()}.{note}"}
+        return {"role": "system", "content": f"{persona_text(self.assistant_name)}\n\n{user_block(self.user_name, memory_prompt())}{note}"}
 
     def _recent(self) -> list:
         msgs = self.history.messages
@@ -108,6 +108,15 @@ class OpenAICompatEngine:
         while start < len(msgs) and msgs[start].get("role") != "user":
             start += 1
         return msgs[start:]
+
+    def _messages(self) -> list:
+        """Data e ora in coda all'ultimo messaggio utente: il prefisso resta uguale tra i turni (cache di vLLM)."""
+        msgs = [dict(m) for m in self._recent()]
+        for m in reversed(msgs):
+            if m.get("role") == "user":
+                m["content"] = f"{m['content']}\n\n(Adesso è {today_label()}.)"
+                break
+        return [self._system(), *msgs]
 
     def _tools(self):
         if not self._tools_supported:
@@ -143,7 +152,7 @@ class OpenAICompatEngine:
             emit({"type": "status", "status": "thinking"})
             for rnd in range(MAX_ROUNDS):
                 tools = self._tools()
-                kwargs: dict = dict(model=self.model, messages=[self._system(), *self._recent()], stream=True)
+                kwargs: dict = dict(model=self.model, messages=self._messages(), stream=True)
                 if tools:
                     kwargs.update(tools=tools, tool_choice="auto")
                 try:

@@ -13,10 +13,11 @@ DATA_DIR = BASE_DIR / "data"
 KEYRING_SERVICE = "AvatarPy"
 
 DEFAULTS: dict[str, Any] = {
-    "provider": "anthropic",            # anthropic | local | claudecode
+    "provider": "anthropic",            # anthropic | local | claudecode | mlx
     "effort": "medium",                 # low | medium | high
     "local_base_url": "http://localhost:8000/v1",
     "local_model": "",
+    "mlx_model": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",   # motore interno (mlx-lm), repo Hugging Face o cartella
     "search_api_key": "",
     "claudecode_model": "sonnet",
     "claudecode_access": "chat",        # chat | read | full
@@ -127,4 +128,6 @@ class Settings:
             return bool(self.get("local_base_url") and self.get("local_model"))
         if p == "claudecode":
             return True
+        if p == "mlx":
+            return bool(self.get("mlx_model"))
         return bool(self.get_secret("anthropic_api_key"))
