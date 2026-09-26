@@ -18,6 +18,7 @@ DEFAULTS: dict[str, Any] = {
     "local_base_url": "http://localhost:8000/v1",
     "local_model": "",
     "mlx_model": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",   # motore interno (mlx-lm), repo Hugging Face o cartella
+    "mlx_thinking": "auto",            # ragionamento del modello interno: auto (secondo il modello) | on | off
     "search_api_key": "",
     "claudecode_model": "sonnet",
     "claudecode_access": "chat",        # chat | read | full
@@ -50,9 +51,10 @@ DEFAULTS: dict[str, Any] = {
     "server_assist_ssh": "",           # utente@host del server ponte (assistenza server), es. root@1.2.3.4
     "server_assist_dir": "/opt/aiserverassistance",   # cartella del bot sul server ponte (contiene .env)
     "server_assist_bot": "luzaserver_bot",            # username Telegram del bot sysadmin
+    "homeassistant_url": "http://homeassistant.local:8123",   # Home Assistant (token nel portachiavi)
 }
 
-SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash", "elevenlabs_api_key")
+SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash", "elevenlabs_api_key", "homeassistant_token")
 
 
 class Settings:

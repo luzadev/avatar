@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 import threading
 from pathlib import Path
@@ -21,6 +22,8 @@ from .openai_compat import SEARCH_TOOL, Aborted
 MAX_ROUNDS = 8
 MAX_HISTORY = 30
 MAX_TOKENS = 3000
+SAMPLING = {"temp": 0.6, "top_p": 0.8, "top_k": 20}   # poco sotto i valori consigliati da Qwen: più costante nell'uso degli strumenti
+DEBUG = bool(os.environ.get("MLX_DEBUG"))   # stampa il testo grezzo generato (tag compresi)
 DEFAULT_MODEL = "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit"
 HUB = Path.home() / ".cache" / "huggingface" / "hub"
 _EXCLUDE = ("whisper", "tts", "embed", "rerank", "clip", "vl-", "-vl", "vision", "diffusion", "parakeet")
@@ -47,6 +50,10 @@ def load_model(name: str):
         if _loaded["name"] == name and _loaded["model"] is not None:
             return _loaded["model"], _loaded["tokenizer"]
         unload()
+        try:
+            import optiq  # noqa: F401  registra architetture extra (es. spark2_5) in mlx-lm, se installato
+        except Exception:
+            pass
         from mlx_lm import load
         model, tokenizer = load(name)
         _loaded.update(name=name, model=model, tokenizer=tokenizer, cache=None, tokens=[], snap=None)
@@ -78,7 +85,7 @@ class TagFilter:
 
     def _emit(self, piece: str) -> str:
         if self.strip_next:
-            piece = piece.lstrip()
+            piece = piece.lstrip().lstrip("-").lstrip()
             if piece:
                 self.strip_next = False
         return piece
@@ -128,10 +135,14 @@ class TagFilter:
         return self._emit(c)
 
 
-# Formati di chiamata: Hermes/Qwen (JSON in <tool_call>) e Gemma 4 (call:nome{chiave:<|"|>testo<|"|>,...}).
+# Formati di chiamata: Hermes/Qwen (JSON in <tool_call>), Gemma 4 (call:nome{chiave:<|"|>testo<|"|>,...}),
+# argkey/Spark-GLM (<tool_call>nome<arg_key>k</arg_key><arg_value>v</arg_value>...</tool_call>).
+# "thinking": alcuni modelli (Spark) usano gli strumenti in modo affidabile solo col ragionamento acceso.
+# "raw_args": il template riproduce gli argomenti come stringa grezza (prompt identico a ciò che il modello ha scritto).
 FORMATS = {
-    "hermes": {"think": ("<think>", "</think>"), "call": ("<tool_call>", "</tool_call>")},
-    "gemma4": {"think": ("<|channel>", "<channel|>"), "call": ("<|tool_call>", "<tool_call|>")},
+    "hermes": {"think": ("<think>", "</think>"), "call": ("<tool_call>", "</tool_call>"), "thinking": False, "raw_args": False},
+    "gemma4": {"think": ("<|channel>", "<channel|>"), "call": ("<|tool_call>", "<tool_call|>"), "thinking": False, "raw_args": True},
+    "argkey": {"think": ("<think>", "</think>"), "call": ("<tool_call>", "</tool_call>"), "thinking": True, "raw_args": False},
 }
 GEMMA_ESC = '<|"|>'
 
@@ -141,7 +152,11 @@ def detect_format(tokenizer) -> str:
         vocab = tokenizer.get_vocab()
     except Exception:
         vocab = {}
-    return "gemma4" if "<|tool_call>" in vocab else "hermes"
+    if "<|tool_call>" in vocab:
+        return "gemma4"
+    if "<arg_key>" in str(getattr(tokenizer, "chat_template", "") or ""):
+        return "argkey"
+    return "hermes"
 
 
 def _gemma_to_json(body: str) -> str:
@@ -169,6 +184,18 @@ def _parse_call(raw: str, fmt: str) -> tuple[str, dict, str] | None:
         except Exception:
             return None
         return m.group(1), dict(args or {}), body[1:-1]
+    if fmt == "argkey" or "<arg_key>" in raw:
+        m = re.match(r"\s*([\w.-]+)\s*(.*)$", raw, re.S)
+        if not m:
+            return None
+        args = {}
+        for k, v in re.findall(r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>", m.group(2), re.S):
+            v = v.strip()
+            try:
+                args[k.strip()] = json.loads(v)
+            except Exception:
+                args[k.strip()] = v
+        return m.group(1), args, json.dumps(args, ensure_ascii=False)
     try:
         d = json.loads(raw)
     except Exception:
@@ -190,8 +217,9 @@ def _parse_call(raw: str, fmt: str) -> tuple[str, dict, str] | None:
 class MLXEngine:
     name = "mlx"
 
-    def __init__(self, model_name: str, search_api_key: str, assistant_name: str, user_name: str) -> None:
+    def __init__(self, model_name: str, search_api_key: str, assistant_name: str, user_name: str, thinking: str = "auto") -> None:
         self.model_name = model_name or DEFAULT_MODEL
+        self.thinking = thinking   # auto | on | off
         self.search_api_key = search_api_key
         self.assistant_name, self.user_name = assistant_name, user_name
         self.history = History("mlx")
@@ -232,7 +260,6 @@ class MLXEngine:
     def _prefill(self, tokens: list[int], cut: int):
         """Cache che contiene esattamente `tokens`, riusando la fotografia precedente se ne è un'estensione.
         La nuova fotografia viene scattata a `cut` (fine dell'ultimo messaggio): il turno successivo riparte da lì."""
-        from mlx_lm import stream_generate
         from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache, can_trim_prompt_cache
         snap, cache, fed = _loaded["snap"], None, 0
         if snap and len(tokens) >= len(snap["tokens"]) and tokens[: len(snap["tokens"])] == snap["tokens"]:
@@ -249,16 +276,21 @@ class MLXEngine:
         _loaded.update(cache=None, tokens=[])
         if cache is None:
             cache = make_prompt_cache(self.model)
-        # max_tokens=1: il token campionato non entra nella cache, che contiene quindi esattamente i token passati
         if cut > fed:
-            for _ in stream_generate(self.model, self.tokenizer, tokens[fed:cut], max_tokens=1, prompt_cache=cache):
-                pass
+            self._feed(cache, tokens[fed:cut])
             _loaded["snap"] = {"tokens": list(tokens[:cut]), "cache": copy.deepcopy(cache)}
             fed = cut
         if len(tokens) > fed:
-            for _ in stream_generate(self.model, self.tokenizer, tokens[fed:], max_tokens=1, prompt_cache=cache):
-                pass
+            self._feed(cache, tokens[fed:])
         return cache
+
+    def _feed(self, cache, tokens: list[int], step: int = 2048) -> None:
+        """Inserisce esattamente `tokens` nella cache, senza campionare (stream_generate aggiungerebbe un token in più)."""
+        import mlx.core as mx
+        for i in range(0, len(tokens), step):
+            self.model(mx.array(tokens[i:i + step])[None], cache=cache)
+            mx.eval([c.state for c in cache])
+        mx.clear_cache()
 
     def close(self) -> None:
         self.model = self.tokenizer = None
@@ -275,12 +307,19 @@ class MLXEngine:
         self.model, self.tokenizer = load_model(self.model_name)
         self.fmt = detect_format(self.tokenizer)
 
+    def _thinking(self) -> bool:
+        if self.thinking == "on":
+            return True
+        if self.thinking == "off":
+            return False
+        return FORMATS[self.fmt]["thinking"]
+
     def _system(self) -> str:
         note = ("\n\nRegole sugli strumenti (obbligatorie):\n"
                 "- Quando l'utente ti chiede di ricordare qualcosa, o ti dice un fatto importante su di sé, DEVI chiamare salva_memoria prima di rispondere. Non dire mai di aver salvato senza averlo chiamato davvero.\n"
                 "- Per cancellare una memoria chiama dimentica_memoria; per cercarne una non presente nel prompt chiama cerca_memoria.\n"
                 "- Per azioni sul Mac (per esempio il calendario) usa gli strumenti dedicati. Se uno risponde con [CONFIRMATION_PENDING], chiedi all'utente di confermare sul pannello e non dire che è fatto.\n"
-                "- Non inventare mai dati reali (meteo, ora, calendario, mail, messaggi, file, stato dei server): se esiste uno strumento che li fornisce, chiamalo prima di rispondere.\n"
+                "- Non inventare mai dati reali: meteo, calendario, mail, messaggi, file, ora, server e memoria li ottieni SOLO chiamando lo strumento corrispondente, anche a metà conversazione. Rispondere senza averlo chiamato è un errore grave.\n"
                 "- Chiama gli strumenti solo nel formato previsto dal tuo template e mai descrivendoli a parole.")
         note += ("\n- Per informazioni aggiornate chiama cerca_web e rispondi in base ai risultati." if self.search_api_key
                  else "\n- Non hai accesso al web: se ti chiedono informazioni aggiornate, dillo chiaramente.")
@@ -302,21 +341,22 @@ class MLXEngine:
         """Prompt completo; con generation=False si ferma alla fine dell'ultimo messaggio (parte stabile)."""
         messages = [{"role": "system", "content": self._system()}, *self._recent()]
         try:
-            return self.tokenizer.apply_chat_template(messages, tools=self._tools(), add_generation_prompt=generation, tokenize=False, enable_thinking=False)
+            return self.tokenizer.apply_chat_template(messages, tools=self._tools(), add_generation_prompt=generation, tokenize=False, enable_thinking=self._thinking())
         except TypeError:
             # Template senza supporto strumenti: li descrive nel sistema.
             messages[0]["content"] += "\n\nStrumenti disponibili (JSON):\n" + json.dumps(self._tools(), ensure_ascii=False) + \
                 "\nPer usarne uno scrivi solo: <tool_call>{\"name\": \"…\", \"arguments\": {…}}</tool_call>"
-            return self.tokenizer.apply_chat_template(messages, add_generation_prompt=generation, tokenize=False, enable_thinking=False)
+            return self.tokenizer.apply_chat_template(messages, add_generation_prompt=generation, tokenize=False, enable_thinking=self._thinking())
 
-    def _prompt_tokens(self) -> tuple[list[int], int]:
-        """Token del prompt e lunghezza della parte stabile (comune al turno successivo)."""
-        tokens = list(self.tokenizer.encode(self._prompt()))
+    def _prompt_tokens(self) -> tuple[list[int], int, str]:
+        """Token del prompt, lunghezza della parte stabile (comune al turno successivo) e testo del prompt."""
+        prompt = self._prompt()
+        tokens = list(self.tokenizer.encode(prompt))
         stable = list(self.tokenizer.encode(self._prompt(generation=False)))
         cut = 0
         while cut < min(len(tokens), len(stable)) and tokens[cut] == stable[cut]:
             cut += 1
-        return tokens, cut
+        return tokens, cut, prompt
 
     def _run_tool(self, name: str, args: dict, emit: Emit, sources: list) -> str:
         if name == "cerca_web":
@@ -343,9 +383,10 @@ class MLXEngine:
         from mlx_lm.sample_utils import make_sampler
         f = FORMATS[self.fmt]
         think, tools, text, truncated = TagFilter(*f["think"], keep=False), TagFilter(*f["call"], keep=True), "", False
-        sampler = make_sampler(temp=0.7, top_p=0.8, top_k=20)
+        sampler = make_sampler(**SAMPLING)
         # Cache del prompt: la parte già vista (fotografia del turno precedente) non viene ricalcolata.
-        tokens, cut = self._prompt_tokens()
+        tokens, cut, prompt = self._prompt_tokens()
+        think.inside = prompt.rstrip().endswith(f["think"][0])   # il template ha già aperto il blocco di pensiero
         cache = self._prefill(tokens[:-1], min(cut, len(tokens) - 1))
         generated: list[int] = []
         try:
@@ -353,6 +394,8 @@ class MLXEngine:
                 if abort.is_set():
                     raise Aborted()
                 generated.append(r.token)
+                if DEBUG:
+                    print(r.text, end="", flush=True)
                 visible = tools.push(think.push(r.text))
                 if visible:
                     if not announced:
@@ -365,8 +408,8 @@ class MLXEngine:
         except Aborted:
             raise
         else:
-            # generate_step inserisce nella cache ogni token emesso, tranne l'ultimo quando si ferma per limite.
-            _loaded.update(cache=cache, tokens=tokens + (generated[:-1] if truncated else generated))
+            # generate_step inserisce nella cache ogni token emesso (anche l'ultimo, anche quando si ferma per limite).
+            _loaded.update(cache=cache, tokens=tokens + generated)
         tail = tools.flush()
         if tail:
             text += tail
@@ -389,7 +432,7 @@ class MLXEngine:
                     break
                 self.history.messages.append({
                     "role": "assistant", "content": round_text.strip(),
-                    "tool_calls": [{"id": f"call_{rnd}_{i}", "type": "function", "function": {"name": n, "arguments": raw}} for i, (n, a, raw) in enumerate(calls)],
+                    "tool_calls": [{"id": f"call_{rnd}_{i}", "type": "function", "function": {"name": n, "arguments": raw if FORMATS[self.fmt]["raw_args"] else a}} for i, (n, a, raw) in enumerate(calls)],
                 })
                 for i, (n, a, raw) in enumerate(calls):
                     result = self._run_tool(n, a, emit, sources)

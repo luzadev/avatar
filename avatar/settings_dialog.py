@@ -1,7 +1,9 @@
 """Finestra impostazioni: motore, chiavi, voce e riconoscimento vocale."""
 from __future__ import annotations
 
+import sys
 import threading
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
@@ -63,7 +65,7 @@ class SettingsDialog(QDialog):
             self.tabs.addTab(sc, title)
             lay.addStretch(1)
             return lay
-        pg_motore, pg_voce, pg_msg, pg_mon = page("Motore"), page("Voce e avatar"), page("Messaggistica"), page("Monitor")
+        pg_motore, pg_voce, pg_msg, pg_mon, pg_casa = page("Motore"), page("Voce e avatar"), page("Messaggistica"), page("Monitor"), page("Casa")
         def add(lay, item):   # inserisce prima dello stretch finale
             if isinstance(item, QWidget): lay.insertWidget(lay.count() - 1, item)
             else: lay.insertLayout(lay.count() - 1, item)
@@ -117,6 +119,8 @@ class SettingsDialog(QDialog):
         self.mlx_model.addItems(cached_models() or [DEFAULT_MODEL])
         self.mlx_model.setEditText(s.get("mlx_model") or DEFAULT_MODEL)
         f.addRow("Modello (repo Hugging Face mlx-community)", self.mlx_model)
+        self.mlx_thinking = _combo([("auto", "Automatico (acceso solo dove serve, es. Spark)"), ("off", "Spento: risposte rapide"), ("on", "Acceso: più lento, meglio su domande complesse")], s.get("mlx_thinking") or "auto")
+        f.addRow("Ragionamento", self.mlx_thinking)
         hint = QLabel("Elenco: modelli già scaricati. Un nome nuovo viene scaricato al primo uso. "
                       "Con 32 GB di RAM: modelli fino a ~20 GB in 4 bit (Qwen3-30B-A3B è veloce e supporta gli strumenti). "
                       "Non tenere aperto anche VLLMac con lo stesso modello.")
@@ -242,6 +246,19 @@ class SettingsDialog(QDialog):
         self.mon_excl = QLineEdit(s.get("monitor_escludi") or ""); self.mon_excl.setPlaceholderText("es. newsletter, offerta, gruppo Calcetto, Amazon  — parole separate da virgola, cercate in mittente, chat e testo")
         form5.addRow("Escludi dagli avvisi", self.mon_excl)
         add(pg_mon, form5)
+
+        # ── Casa (Home Assistant) ─────────────────────────────────────────
+        form_ha = QFormLayout()
+        form_ha.addRow(QLabel("Home Assistant: crea un token di accesso a lunga durata dal tuo profilo (Sicurezza) e incollalo qui. Viene salvato nel portachiavi."))
+        self.ha_url = QLineEdit(str(s.get("homeassistant_url") or "")); self.ha_url.setPlaceholderText("http://homeassistant.local:8123")
+        form_ha.addRow("Indirizzo", self.ha_url)
+        row = QHBoxLayout()
+        self.ha_token = QLineEdit(); self.ha_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ha_token.setPlaceholderText("•••••• (salvato)" if s.get_secret("homeassistant_token") else "token di accesso a lunga durata"); row.addWidget(self.ha_token, 1)
+        b = QPushButton("Verifica"); b.clicked.connect(self._ha_check); row.addWidget(b)
+        form_ha.addRow("Token", row)
+        self.ha_hint = QLabel(""); self.ha_hint.setWordWrap(True); form_ha.addRow("", self.ha_hint)
+        add(pg_casa, form_ha)
 
         btns = QHBoxLayout(); btns.addStretch()
         cancel = QPushButton("Annulla"); cancel.clicked.connect(self.reject); btns.addWidget(cancel)
@@ -390,7 +407,26 @@ class SettingsDialog(QDialog):
                 self._async.emit("el_error", str(err)[:120])
         threading.Thread(target=work, daemon=True).start()
 
+    def _ha_check(self) -> None:
+        vals = {"homeassistant_url": self.ha_url.text().strip().rstrip("/")}
+        if self.ha_token.text().strip():
+            vals["homeassistant_token"] = self.ha_token.text().strip()
+        self.settings.update(vals)
+        self.ha_hint.setText("Verifico…")
+
+        def go():
+            try:
+                sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugins"))
+                import importlib
+                mod = importlib.import_module("home_assistant")
+                self._async.emit("ha", mod.verifica())
+            except Exception as err:
+                self._async.emit("ha", f"Errore: {err}")
+        threading.Thread(target=go, daemon=True).start()
+
     def _on_async(self, kind: str, payload) -> None:
+        if kind == "ha":
+            self.ha_hint.setText(str(payload)); return
         if kind == "vb":
             self.vb_profile.clear()
             for pid, label in payload:
@@ -456,7 +492,7 @@ class SettingsDialog(QDialog):
         values = {
             "provider": self.provider.currentData(), "effort": self.effort.currentData(),
             "local_base_url": self.local_url.text().strip().rstrip("/"), "local_model": self.local_model.currentText().strip(),
-            "mlx_model": self.mlx_model.currentText().strip(),
+            "mlx_model": self.mlx_model.currentText().strip(), "mlx_thinking": self.mlx_thinking.currentData() or "auto",
             "search_api_key": self.search_key.text().strip(),
             "claudecode_model": self.cc_model.currentData(), "claudecode_access": self.cc_access.currentData(),
             "claudecode_config_dir": self.cc_config.currentText().strip(), "claudecode_path": self.cc_path.text().strip(),
@@ -480,7 +516,10 @@ class SettingsDialog(QDialog):
             "server_assist_ssh": self.srv_ssh.text().strip(),
             "server_assist_dir": self.srv_dir.text().strip() or "/opt/aiserverassistance",
             "server_assist_bot": self.srv_bot.text().strip().lstrip("@") or "luzaserver_bot",
+            "homeassistant_url": self.ha_url.text().strip().rstrip("/"),
         }
+        if self.ha_token.text().strip():
+            values["homeassistant_token"] = self.ha_token.text().strip()
         if self.tg_hash.text().strip():
             values["telegram_api_hash"] = self.tg_hash.text().strip()
         if self.api_key.text().strip():

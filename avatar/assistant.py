@@ -181,7 +181,7 @@ class Assistant:
         s = self.settings
         provider = s.get("provider")
         self.name, self.user_name = _identity()
-        key = (provider, s.get("effort"), s.get("local_base_url"), s.get("local_model"), s.get("mlx_model"), s.get("search_api_key"),
+        key = (provider, s.get("effort"), s.get("local_base_url"), s.get("local_model"), s.get("mlx_model"), s.get("mlx_thinking"), s.get("search_api_key"),
                s.get("claudecode_model"), s.get("claudecode_access"), s.get("claudecode_config_dir"),
                s.get("claudecode_path"), self.name, self.user_name, s.get_secret("anthropic_api_key")[-6:],
                s.get_secret("local_api_key")[-4:])
@@ -191,7 +191,7 @@ class Assistant:
         if old is not None and hasattr(old, "close"):
             old.close()   # libera il modello interno dalla memoria
         if provider == "mlx":
-            self._engine = MLXEngine(s.get("mlx_model") or "", s.get("search_api_key"), self.name, self.user_name)
+            self._engine = MLXEngine(s.get("mlx_model") or "", s.get("search_api_key"), self.name, self.user_name, s.get("mlx_thinking") or "auto")
         elif provider == "local":
             if s.get("local_base_url") and s.get("local_model"):
                 self._engine = OpenAICompatEngine(s.get("local_base_url"), s.get("local_model"), s.get_secret("local_api_key"),
