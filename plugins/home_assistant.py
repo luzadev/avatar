@@ -306,6 +306,67 @@ def chiedi(params: dict, ctx: dict) -> str:
     return speech or "Assist ha eseguito il comando senza commento."
 
 
+# ── Musica e annunci (Alexa Media Player e altri lettori) ───────────────────
+_services: dict = {"t": 0.0, "names": {}}
+SORGENTI = {"spotify": "Spotify", "amazon": "Amazon Music", "amazon music": "Amazon Music", "tunein": "TuneIn", "radio": "TuneIn",
+            "apple": "Apple Music", "apple music": "Apple Music", "deezer": "Deezer"}
+
+
+def servizi() -> dict:
+    if time.time() - _services["t"] > 300 or not _services["names"]:
+        _services["names"] = {d["domain"]: list(d["services"].keys()) for d in (api("/api/services") or [])}
+        _services["t"] = time.time()
+    return _services["names"]
+
+
+def _alexa(entity_id: str) -> str:
+    """Nome del servizio notify dell'integrazione Alexa Media Player per questo lettore, o ''."""
+    slug = entity_id.split(".", 1)[-1]
+    return f"alexa_media_{slug}" if f"alexa_media_{slug}" in servizi().get("notify", []) else ""
+
+
+def riproduci(params: dict, ctx: dict) -> str:
+    e = trova(str(params.get("dispositivo", "")), "media_player")
+    if not e:
+        return f"Non trovo il lettore '{params.get('dispositivo')}'. Lettori disponibili: " + ", ".join(x["nome"] for x in entita() if x["id"].startswith("media_player.") and x["stato"] != "unavailable")
+    brano = str(params.get("brano", "")).strip()
+    if not brano:
+        return "Errore: serve cosa riprodurre (brano, artista, playlist, stazione radio o URL)."
+    if e["stato"] == "unavailable":
+        return f"{e['nome']} non è raggiungibile al momento."
+    sorgente = SORGENTI.get(str(params.get("sorgente", "")).strip().lower(), "")
+    _cache["t"] = 0
+    if _alexa(e["id"]):
+        # comando vocale inoltrato ad Alexa, es. "riproduci Let It Go di Idina Menzel su Spotify"
+        testo = brano if re.match(r"^(riproduci|metti|suona|fai partire)\b", brano.lower()) else f"riproduci {brano}"
+        if sorgente and sorgente.lower() not in testo.lower():
+            testo += f" su {sorgente}"
+        _call("media_player", "play_media", {"entity_id": e["id"], "media_content_type": "custom", "media_content_id": testo})
+        return f"Ho chiesto a {e['nome']}: «{testo}»."
+    if brano.startswith(("http://", "https://")):
+        _call("media_player", "play_media", {"entity_id": e["id"], "media_content_type": "music", "media_content_id": brano})
+        return f"Su {e['nome']} parte l'URL indicato."
+    return f"{e['nome']} non è un dispositivo Alexa: posso avviarci solo un URL (stream, file) con casa_riproduci, oppure prova casa_chiedi."
+
+
+def annuncia(params: dict, ctx: dict) -> str:
+    testo = str(params.get("testo", "")).strip()
+    if not testo:
+        return "Errore: serve il testo da far dire."
+    nome = str(params.get("dispositivo", "")).strip()
+    e = trova(nome, "media_player") if nome else None
+    if nome and not e:
+        return f"Non trovo il dispositivo '{nome}'."
+    if e and not _alexa(e["id"]):
+        return f"{e['nome']} non è un dispositivo Alexa: gli annunci vocali funzionano solo sugli Echo."
+    svc = _alexa(e["id"]) if e else ("alexa_media_ovunque" if "alexa_media_ovunque" in servizi().get("notify", []) else "")
+    if not svc:
+        return "Nessun dispositivo Alexa disponibile per l'annuncio."
+    tipo = "tts" if str(params.get("tipo", "")).lower() == "tts" else "announce"
+    _call("notify", svc, {"message": testo, "data": {"type": tipo}})
+    return f"Annuncio inviato a {e['nome'] if e else 'tutti gli Echo'}."
+
+
 TOOLS = [
     {"name": "casa_dispositivi", "description": "Elenca i dispositivi di casa (Home Assistant) con stato e stanza. Senza parametri: panoramica per stanza. Con filtro (parola nel nome/stanza) o dominio (luce, interruttore, clima, tapparella, media, sensore, scena, …) l'elenco dettagliato con gli id.",
      "parameters": {"type": "object", "properties": {"filtro": {"type": "string"}, "dominio": {"type": "string"}, "limite": {"type": "integer"}}}, "run": dispositivi},
@@ -321,6 +382,10 @@ TOOLS = [
      "parameters": {"type": "object", "properties": {"nome": {"type": "string"}}, "required": ["nome"]}, "run": scena},
     {"name": "casa_servizio", "description": "Chiama un servizio generico di Home Assistant (dominio + servizio, es. vacuum/start, notify/mobile_app) con dati JSON e opzionale entità per nome. Per casi non coperti dagli altri strumenti; serrature, allarmi e sirene chiedono conferma.",
      "parameters": {"type": "object", "properties": {"dominio": {"type": "string"}, "servizio": {"type": "string"}, "entita": {"type": "string"}, "dati": {"type": "object"}, "confermato": CONFERMATO}, "required": ["dominio", "servizio"]}, "run": servizio},
+    {"name": "casa_riproduci", "description": "Riproduce musica su un lettore di casa: brano, artista, album, playlist, stazione radio o URL. Sugli Echo (Alexa) inoltra un comando vocale ('riproduci … su Spotify'); sorgente = spotify, amazon, tunein, apple, deezer (facoltativa). Per fermare o mettere in pausa usa casa_imposta con modo=pause/stop.",
+     "parameters": {"type": "object", "properties": {"dispositivo": {"type": "string"}, "brano": {"type": "string"}, "sorgente": {"type": "string"}}, "required": ["dispositivo", "brano"]}, "run": riproduci},
+    {"name": "casa_annuncia", "description": "Fa pronunciare un testo a un Echo (Alexa) di casa, o a tutti se non indichi il dispositivo: annunci tipo 'la cena è pronta'.",
+     "parameters": {"type": "object", "properties": {"testo": {"type": "string"}, "dispositivo": {"type": "string"}, "tipo": {"type": "string", "enum": ["announce", "tts"]}}, "required": ["testo"]}, "run": annuncia},
     {"name": "casa_chiedi", "description": "Manda una frase in italiano ad Assist di Home Assistant (es. 'spegni tutte le luci del piano di sopra') e riporta la sua risposta. Utile per comandi su più dispositivi o quando non trovi l'entità.",
      "parameters": {"type": "object", "properties": {"testo": {"type": "string"}}, "required": ["testo"]}, "run": chiedi},
 ]
