@@ -27,11 +27,73 @@ FORMATI = {"quadrata": (1024, 1024), "orizzontale": (1280, 768), "verticale": (7
 _last: dict = {"path": ""}
 
 
+def cached_image_models() -> list[str]:
+    """Modelli per immagini già presenti nella cache di Hugging Face (mflux, FLUX, Z-Image, Qwen-Image)."""
+    hub = Path.home() / ".cache" / "huggingface" / "hub"
+    out = []
+    if hub.exists():
+        for d in sorted(hub.glob("models--*")):
+            name = d.name[len("models--"):].replace("--", "/")
+            low = name.lower()
+            if any(k in low for k in ("mflux", "flux", "z-image", "qwen-image")) and (d / "snapshots").exists():
+                out.append(name)
+    return out
+
+
 def _cfg() -> tuple[str, str]:
     s = Settings()
     fam = str(s.get("immagini_famiglia") or "z-image-turbo")
     repo = str(s.get("immagini_modello") or "").strip() or MODELLI.get(fam, MODELLI["z-image-turbo"])["default_repo"]
     return fam, repo
+
+
+def _progress(ctx: dict, text: str) -> None:
+    """Mostra l'avanzamento sul volto (stato del HUD) e nel registro."""
+    player = ctx.get("player")
+    if player is not None and hasattr(player, "set_state"):
+        try:
+            player.set_state(f"PROCESSING · {text}")
+        except Exception:
+            pass
+    if ctx.get("log"):
+        ctx["log"](f"[immagini] {text}")
+
+
+def _run_with_progress(cmd: list[str], steps: int, ctx: dict, timeout: int = 1800):
+    """Esegue mflux leggendo la barra di avanzamento (download dei pesi e passi di diffusione)."""
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=0)
+    buf, lines, last, t0 = "", [], "", time.time()
+    _progress(ctx, "immagine: avvio")
+    try:
+        while True:
+            ch = proc.stdout.read(1)
+            if not ch:
+                break
+            if time.time() - t0 > timeout:
+                proc.kill()
+                return None, "", ""
+            if ch in ("\r", "\n"):
+                line = buf.strip(); buf = ""
+                if not line:
+                    continue
+                lines.append(line)
+                m = re.search(r"Fetching (\d+) files:\s*(\d+)%", line)
+                if m:
+                    msg = f"download modello {m.group(2)}%"
+                elif (m := re.search(r"(\d+)/(\d+)\s*\[", line)):
+                    k, n = int(m.group(1)), int(m.group(2))
+                    msg = f"immagine {k}/{n}" if k < n else "immagine: salvataggio"
+                else:
+                    continue
+                if msg != last:
+                    last = msg
+                    _progress(ctx, msg)
+            else:
+                buf += ch
+    finally:
+        proc.wait()
+    tail = " | ".join(l for l in lines[-3:] if "it/s" not in l and "s/it" not in l)
+    return proc, tail, ""
 
 
 def genera(params: dict, ctx: dict) -> str:
@@ -61,16 +123,13 @@ def genera(params: dict, ctx: dict) -> str:
     if ctx.get("log"):
         ctx["log"](f"[immagini] {fam} {w}x{h} {steps} passi: {prompt[:80]}")
     t = time.time()
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-    except subprocess.TimeoutExpired:
+    proc, tail, err = _run_with_progress(cmd, steps, ctx)
+    if proc is None:
         return "Generazione interrotta: troppo lenta (oltre 30 minuti)."
     if proc.returncode != 0 or not out.exists():
-        err = (proc.stderr or proc.stdout).strip().splitlines()
-        tail = " | ".join(err[-3:]) if err else f"codice {proc.returncode}"
         if "not found" in tail.lower() or "401" in tail or "403" in tail:
             tail += " (controlla il nome del modello nelle impostazioni, o accetta la licenza su Hugging Face)"
-        return f"Generazione fallita: {tail[:400]}"
+        return f"Generazione fallita: {tail[:400] or f'codice {proc.returncode}'}"
     _last["path"] = str(out)
     secs = time.time() - t
     if params.get("mostra", True) not in (False, "false", "no"):

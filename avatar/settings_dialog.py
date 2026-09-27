@@ -45,7 +45,14 @@ def _combo(items, current) -> QComboBox:
         c.addItem(label, value)
     idx = c.findData(current)
     c.setCurrentIndex(idx if idx >= 0 else 0)
+    # le etichette lunghe non allargano la finestra: il menu si apre comunque a larghezza piena
+    c.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon); c.setMinimumContentsLength(22)
     return c
+
+
+def _note(text: str) -> QLabel:
+    """Etichetta descrittiva che va a capo invece di allargare la finestra."""
+    lbl = QLabel(text); lbl.setWordWrap(True); return lbl
 
 
 class SettingsDialog(QDialog):
@@ -88,7 +95,7 @@ class SettingsDialog(QDialog):
         self.api_key = QLineEdit(); self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_key.setPlaceholderText("•••••• (salvata, lascia vuoto per non cambiarla)" if s.get_secret("anthropic_api_key") else "sk-ant-…")
         f.addRow("Chiave API Anthropic", self.api_key)
-        f.addRow("", QLabel("Creala su console.anthropic.com. Viene salvata nel portachiavi di macOS."))
+        f.addRow("", _note("Creala su console.anthropic.com. Viene salvata nel portachiavi di macOS."))
         self.stack.addWidget(w)
         # Locale
         w = QWidget(); f = QFormLayout(w)
@@ -183,7 +190,7 @@ class SettingsDialog(QDialog):
 
         # ── Telegram ──────────────────────────────────────────────────────
         form3 = QFormLayout()
-        form3.addRow(QLabel("Telegram (account personale): credenziali da my.telegram.org > API development tools"))
+        form3.addRow(_note("Telegram (account personale): credenziali da my.telegram.org > API development tools"))
         row = QHBoxLayout()
         self.tg_id = QLineEdit(str(s.get("telegram_api_id") or "")); self.tg_id.setPlaceholderText("api id"); row.addWidget(self.tg_id)
         self.tg_hash = QLineEdit(); self.tg_hash.setEchoMode(QLineEdit.EchoMode.Password)
@@ -207,7 +214,7 @@ class SettingsDialog(QDialog):
 
         # ── WhatsApp (dispositivo collegato, Baileys) ─────────────────────
         form4 = QFormLayout()
-        form4.addRow(QLabel("WhatsApp in tempo reale (client non ufficiale: possibile blocco del numero, a tuo rischio)"))
+        form4.addRow(_note("WhatsApp in tempo reale (client non ufficiale: possibile blocco del numero, a tuo rischio)"))
         row = QHBoxLayout()
         self.wa_live = QCheckBox("Attivo all'avvio"); self.wa_live.setChecked(bool(s.get("whatsapp_live"))); row.addWidget(self.wa_live)
         self.wa_annuncia = QCheckBox("Annuncia a voce i messaggi in arrivo"); self.wa_annuncia.setChecked(bool(s.get("whatsapp_annuncia"))); row.addWidget(self.wa_annuncia)
@@ -224,7 +231,7 @@ class SettingsDialog(QDialog):
 
         # ── Assistenza server (bot sysadmin + monitoraggio Sentinella) ────
         form_srv = QFormLayout()
-        form_srv.addRow(QLabel("Assistenza server: bot Telegram sysadmin e monitoraggio Sentinella sul server ponte (accesso SSH con chiave)"))
+        form_srv.addRow(_note("Assistenza server: bot Telegram sysadmin e monitoraggio Sentinella sul server ponte (accesso SSH con chiave)"))
         self.srv_ssh = QLineEdit(str(s.get("server_assist_ssh") or "")); self.srv_ssh.setPlaceholderText("root@host del server ponte")
         form_srv.addRow("SSH server ponte", self.srv_ssh)
         self.srv_dir = QLineEdit(str(s.get("server_assist_dir") or "")); self.srv_dir.setPlaceholderText("/opt/aiserverassistance")
@@ -250,7 +257,7 @@ class SettingsDialog(QDialog):
 
         # ── Casa (Home Assistant) ─────────────────────────────────────────
         form_ha = QFormLayout()
-        form_ha.addRow(QLabel("Home Assistant: crea un token di accesso a lunga durata dal tuo profilo (Sicurezza) e incollalo qui. Viene salvato nel portachiavi."))
+        form_ha.addRow(_note("Home Assistant: crea un token di accesso a lunga durata dal tuo profilo (Sicurezza) e incollalo qui. Viene salvato nel portachiavi."))
         self.ha_url = QLineEdit(str(s.get("homeassistant_url") or "")); self.ha_url.setPlaceholderText("http://homeassistant.local:8123")
         form_ha.addRow("Indirizzo", self.ha_url)
         row = QHBoxLayout()
@@ -265,30 +272,40 @@ class SettingsDialog(QDialog):
         from PyQt6.QtWidgets import QPlainTextEdit
         from .mcp_client import CONFIG_FILE as MCP_FILE, manager as mcp_manager
         form_mcp = QFormLayout()
-        form_mcp.addRow(QLabel("Server MCP esterni: stesso formato di Claude Desktop (mcpServers con command/args/env, oppure url/headers). "
+        form_mcp.addRow(_note("Server MCP esterni: stesso formato di Claude Desktop (mcpServers con command/args/env, oppure url/headers). "
                                "Gli strumenti diventano disponibili a tutti i motori; con Claude Code i server vengono passati direttamente a claude."))
         self.mcp_text = QPlainTextEdit()
         try:
             self.mcp_text.setPlainText(MCP_FILE.read_text(encoding="utf-8"))
         except Exception:
             self.mcp_text.setPlainText('{\n  "mcpServers": {\n  }\n}\n')
-        self.mcp_text.setMinimumHeight(220)
+        self.mcp_text.setMinimumHeight(180); self.mcp_text.setMaximumHeight(260)
+        self.mcp_text.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         form_mcp.addRow(self.mcp_text)
         row = QHBoxLayout()
         b = QPushButton("Applica e ricollega"); b.clicked.connect(self._mcp_apply); row.addWidget(b)
         b = QPushButton("Esempio"); b.clicked.connect(self._mcp_example); row.addWidget(b)
         row.addStretch()
         form_mcp.addRow(row)
-        self.mcp_hint = QLabel(mcp_manager.status()); self.mcp_hint.setWordWrap(True); form_mcp.addRow(self.mcp_hint)
+        self.mcp_hint = QLabel(mcp_manager.status()); self.mcp_hint.setWordWrap(True); self.mcp_hint.setMinimumWidth(200); form_mcp.addRow(self.mcp_hint)
         add(pg_tool, form_mcp)
 
         # ── Immagini (mflux) ──────────────────────────────────────────────
         form_img = QFormLayout()
-        form_img.addRow(QLabel("Generazione immagini in locale (mflux, MLX). Il primo uso scarica il modello da Hugging Face."))
+        form_img.addRow(_note("Generazione immagini in locale (mflux, MLX). Il primo uso scarica il modello da Hugging Face."))
         self.img_fam = _combo([("z-image-turbo", "Z-Image Turbo (veloce, 8 passi, consigliato)"), ("schnell", "FLUX.1 schnell (4 passi)"), ("dev", "FLUX.1 dev (lento, licenza non commerciale)"), ("qwen", "Qwen-Image (pesante, ottimo col testo)")], s.get("immagini_famiglia") or "z-image-turbo")
         form_img.addRow("Famiglia", self.img_fam)
-        self.img_model = QLineEdit(str(s.get("immagini_modello") or "")); self.img_model.setPlaceholderText("vuoto = predefinito (es. mflux-community/z-image-turbo-mflux-q4)")
-        form_img.addRow("Modello (repo Hugging Face)", self.img_model)
+        self.img_model = QComboBox(); self.img_model.setEditable(True)
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugins"))
+            import importlib
+            self.img_model.addItems([""] + importlib.import_module("immagini").cached_image_models())
+        except Exception:
+            self.img_model.addItem("")
+        self.img_model.setEditText(str(s.get("immagini_modello") or ""))
+        self.img_model.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon); self.img_model.setMinimumContentsLength(30)
+        self.img_model.lineEdit().setPlaceholderText("vuoto = predefinito della famiglia; un nome nuovo viene scaricato al primo uso")
+        form_img.addRow("Modello (elenco: già scaricati)", self.img_model)
         add(pg_tool, form_img)
 
         btns = QHBoxLayout(); btns.addStretch()
@@ -299,7 +316,8 @@ class SettingsDialog(QDialog):
         outer.addLayout(btns)
         screen = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
         h = int(screen.height() * 0.85) if screen else 800
-        self.resize(820, min(900, h))
+        w = min(1000, int(screen.width() * 0.9)) if screen else 1000
+        self.resize(w, min(900, h))
         self._async.connect(self._on_async)
         self._check_cc()
 
@@ -569,7 +587,7 @@ class SettingsDialog(QDialog):
             "server_assist_dir": self.srv_dir.text().strip() or "/opt/aiserverassistance",
             "server_assist_bot": self.srv_bot.text().strip().lstrip("@") or "luzaserver_bot",
             "homeassistant_url": self.ha_url.text().strip().rstrip("/"),
-            "immagini_famiglia": self.img_fam.currentData() or "z-image-turbo", "immagini_modello": self.img_model.text().strip(),
+            "immagini_famiglia": self.img_fam.currentData() or "z-image-turbo", "immagini_modello": self.img_model.currentText().strip(),
         }
         if self.ha_token.text().strip():
             values["homeassistant_token"] = self.ha_token.text().strip()

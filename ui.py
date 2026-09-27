@@ -632,7 +632,7 @@ class HudCanvas(QWidget):
         # either way because the animation state keeps stepping at 60 Hz.
         self._paint_tick = (self._paint_tick + 1) % 6
         active = (self.speaking or amp > 0.02
-                  or self.state in ("THINKING", "PROCESSING"))
+                  or self.state.split(" ")[0] in ("THINKING", "PROCESSING"))
         if _blinked or (self._paint_tick % 2 == 0 if active
                         else self._paint_tick % 3 == 0):
             # Nothing is on screen when the window is hidden or minimised, so
@@ -665,9 +665,9 @@ class HudCanvas(QWidget):
             return qcol(C.MUTED_C), qcol(C.MUTED_C)
         if self.speaking:
             return qcol(C.PRI), qcol(C.ACC)
-        if self.state in ("THINKING", "PROCESSING"):
+        if self.state.split(" ")[0] in ("THINKING", "PROCESSING"):
             return qcol(C.PRI), qcol(C.ACC2)
-        if self.state == "LISTENING":
+        if self.state.split(" ")[0] == "LISTENING":
             return qcol(C.PRI), qcol(C.GREEN)
         return qcol(C.PRI), qcol(C.PRI_DIM)
 
@@ -763,7 +763,7 @@ class HudCanvas(QWidget):
         # 6. Sweeping arcs. Long spans, not dashes — the original's grandeur
         #    came from a few big strokes. Speed is the state: idle drifts,
         #    thinking hurries, speaking runs.
-        rate = 1.0 + (1.9 if self.state in ("THINKING", "PROCESSING") else 0.0) \
+        rate = 1.0 + (1.9 if self.state.split(" ")[0] in ("THINKING", "PROCESSING") else 0.0) \
                    + (1.2 if self.speaking else 0.0)
         for k, (rr, span, count, dirn, col, a, wid) in enumerate((
                 (0.955, 118, 2, +1, acc,  0.75, 2.0),
@@ -852,9 +852,9 @@ class HudCanvas(QWidget):
                 _main = qcol(C.PRI)
                 if self.speaking:
                     _acc = qcol(C.ACC)
-                elif self.state in ("THINKING", "PROCESSING"):
+                elif self.state.split(" ")[0] in ("THINKING", "PROCESSING"):
                     _acc = qcol(C.ACC2)
-                elif self.state == "LISTENING":
+                elif self.state.split(" ")[0] == "LISTENING":
                     _acc = qcol(C.GREEN)
                 else:
                     _acc = qcol(C.PRI)
@@ -882,7 +882,7 @@ class HudCanvas(QWidget):
         elif self.state == "PROCESSING":
             sym = "▷" if self._blink else "▶"
             txt, col = f"{sym}  PROCESSING", qcol(C.ACC2)
-        elif self.state == "LISTENING":
+        elif self.state.split(" ")[0] == "LISTENING":
             sym = "●" if self._blink else "○"
             txt, col = f"{sym}  LISTENING",  qcol(C.GREEN)
         else:

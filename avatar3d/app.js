@@ -194,7 +194,7 @@ function drawOverlay() {
   levels.push(dispLevel); levels.shift();
   const col = COLORS[state.name] || '#00d4ff';
   stateEl.style.color = col; stateEl.style.textShadow = `0 0 8px ${col}88`;
-  stateEl.textContent = '●  ' + state.name;
+  stateEl.textContent = '●  ' + (state.label || state.name);
   wctx.clearRect(0, 0, wave.width, wave.height);
   const n = levels.length, bw = wave.width / n;
   for (let i = 0; i < n; i++) {
@@ -206,8 +206,8 @@ function drawOverlay() {
 }
 
 window.avatar3d = {
-  update(level, open, width, name) { state.level = level; state.open = open; state.width = width; if (name) state.name = name; },
-  setState(name) { state.name = name; },
+  update(level, open, width, name) { state.level = level; state.open = open; state.width = width; if (name) { state.label = name; state.name = name.split(' ')[0]; } },
+  setState(name) { state.label = name; state.name = name.split(' ')[0]; },
   glance(dx, dy, hold) { smooth.glanceX = dx * 0.3; smooth.glanceY = -dy * 0.2; smooth.glanceUntil = clock.elapsedTime + (hold || 1.1); },
   setFraming(f) { state.framing = f; frame(); },
   status() { return { loaded: Boolean(model), animation: Boolean(mixer), head: Boolean(head), blendShapes: mouth.hasShapes, morphs: morphMeshes.length, eyes: eyes.length }; },

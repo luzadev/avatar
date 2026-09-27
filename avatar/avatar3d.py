@@ -84,7 +84,7 @@ class Avatar3DView(QWebEngineView):
 
     # ── API thread-safe (valori semplici, letti dal timer sul thread Qt) ──
     def set_state(self, state: str) -> None:
-        self._state = str(state or "LISTENING")
+        self._state = str(state or "LISTENING").replace("'", "’")
 
     def set_audio_level(self, level: float) -> None:
         try:
