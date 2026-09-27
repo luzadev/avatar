@@ -22,7 +22,7 @@ from .tts import SentenceSplitter, clean_for_speech, make_voice
 END = object()
 STATUS_LABELS = {
     "thinking": "THINKING", "searching": "PROCESSING", "memory": "PROCESSING",
-    "working": "PROCESSING", "responding": "THINKING",
+    "working": "PROCESSING", "responding": "THINKING", "loading": "PROCESSING",
 }
 
 
@@ -140,7 +140,7 @@ class Assistant:
                 print(f"[scheduler] {err}")
 
     def _warmup(self) -> None:
-        self.ui.set_state("PROCESSING")
+        self.ui.set_state("PROCESSING · avvio")
         self.ui.write_log(f"SYS: {self.name} si sta avviando: carico voce e riconoscimento vocale…")
         try:
             self.voice.load()
@@ -290,7 +290,7 @@ class Assistant:
 
     def _on_utterance(self, audio: np.ndarray) -> None:
         self._last_speech = time.monotonic()
-        self.ui.set_state("PROCESSING")
+        self.ui.set_state("PROCESSING · trascrivo")
         try:
             text = self.stt.transcribe(audio)
         except Exception as err:
@@ -305,13 +305,14 @@ class Assistant:
         self.handle_text(text)
 
     # ── Turno di conversazione ───────────────────────────────────────────
-    def handle_text(self, text: str) -> None:
-        """Chiamabile da qualunque thread (UI, microfono, quiz…)."""
+    def handle_text(self, text: str, origin: str = "local") -> None:
+        """Chiamabile da qualunque thread (UI, microfono, telefono…). origin="remote": la voce va solo al telefono."""
         text = (text or "").strip()
         if not text:
             return
         if self._busy or self._speaking:
             self.interrupt(silent=True)
+        self._origin = origin
         threading.Thread(target=self._run_turn, args=(text,), daemon=True).start()
 
     def say(self, text: str) -> None:
@@ -339,12 +340,22 @@ class Assistant:
                     return
                 t = ev.get("type")
                 if t == "status":
+                    label = STATUS_LABELS.get(ev["status"], "THINKING")
+                    detail = str(ev.get("detail") or "").strip()
+                    if ev["status"] == "working" and detail:
+                        detail = f"strumento: {detail}"
+                    elif ev["status"] == "searching" and not detail:
+                        detail = "cerco sul web"
+                    elif ev["status"] == "memory" and not detail:
+                        detail = "memoria"
                     if not self._speaking:
-                        self.ui.set_state(STATUS_LABELS.get(ev["status"], "THINKING"))
+                        self.ui.set_state(f"{label} · {detail}" if detail else label)
                     if ev["status"] == "searching":
                         self.ui.write_log("SYS: Cerco sul web…")
                     elif ev["status"] == "working":
                         self.ui.write_log(f"SYS: Lavoro sul Mac ({ev.get('detail', '')})…")
+                    elif ev["status"] == "loading" and detail:
+                        self.ui.write_log(f"SYS: {detail}…")
                 elif t == "text":
                     for s in splitter.push(ev["delta"]):
                         self._speech_q.put((turn, s))
@@ -401,6 +412,12 @@ class Assistant:
                 self.ui.write_log(f"ERR: Sintesi vocale — {err}")
                 continue
             if turn == self._turn:
+                remote = getattr(self, "remote", None)
+                if remote is not None and remote.has_clients():
+                    try:
+                        remote.on_audio(item, audio)
+                    except Exception as err:
+                        print(f"[remoto] audio: {err}")
                 self._audio_q.put((turn, item, audio))
 
     def _play_loop(self) -> None:
@@ -412,6 +429,9 @@ class Assistant:
                 self.player.drain()
                 self._speaking = False
                 self._tail_until = time.monotonic() + 0.5
+                remote = getattr(self, "remote", None)
+                if remote is not None:
+                    remote.on_turn_end()
                 if not self._busy and turn == self._turn:
                     self.ui.set_state("LISTENING" if self._awake else "SLEEPING")
                 continue
@@ -419,7 +439,10 @@ class Assistant:
                 continue
             self._speaking = True
             self.ui.set_state("SPEAKING")
-            self.player.play(audio, text, self._abort)
+            if getattr(self, "_origin", "local") == "remote":
+                time.sleep(min(0.4, len(audio) / 24000 * 0.1))   # la voce la riproduce il telefono
+            else:
+                self.player.play(audio, text, self._abort)
             self._last_speech = time.monotonic()
 
     def interrupt(self, silent: bool = False) -> None:

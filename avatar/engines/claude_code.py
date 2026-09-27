@@ -13,7 +13,7 @@ from pathlib import Path
 from memory import memory_manager as mm
 
 from avatar.memory_tools import memory_prompt
-from .base import Emit, History, persona_text, today_label, user_block
+from .base import Meter, Emit, History, persona_text, today_label, user_block
 
 MEMORY_TOOLS = ["mcp__avatar"]  # tutti gli strumenti del server MCP dell'app (memoria e plugin)
 ACCESS = {
@@ -155,6 +155,8 @@ class ClaudeCodeEngine:
         self._proc = proc
         out = {"text": "", "initialized": False, "error": None, "result": ""}
         announced = False
+        meter = Meter(emit, unit="parole")
+        emit({"type": "status", "status": "loading", "detail": "avvio Claude Code"})
 
         def watch_abort():
             abort.wait()
@@ -178,6 +180,7 @@ class ClaudeCodeEngine:
             t = msg.get("type")
             if t == "system" and msg.get("subtype") == "init":
                 out["initialized"] = True
+                emit({"type": "status", "status": "thinking", "detail": "penso"})
             elif t == "stream_event":
                 ev = msg.get("event") or {}
                 if ev.get("type") == "content_block_start" and (ev.get("content_block") or {}).get("type") == "tool_use":
@@ -188,12 +191,15 @@ class ClaudeCodeEngine:
                         emit({"type": "status", "status": "searching"})
                     else:
                         emit({"type": "status", "status": "working", "detail": name})
+                elif ev.get("type") == "content_block_delta" and (ev.get("delta") or {}).get("type") == "thinking_delta":
+                    meter.tick("thinking", str(ev["delta"].get("thinking", "")).count(" "))
                 elif ev.get("type") == "content_block_delta" and (ev.get("delta") or {}).get("type") == "text_delta":
                     delta = ev["delta"].get("text", "")
                     if delta:
                         if not announced:
                             announced = True
-                            emit({"type": "status", "status": "responding"})
+                            meter.tick("responding", 0, force=True)
+                        meter.tick("responding", delta.count(" "))
                         out["text"] += delta
                         emit({"type": "text", "delta": delta})
                 elif ev.get("type") == "message_start" and announced:

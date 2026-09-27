@@ -16,7 +16,7 @@ from pathlib import Path
 from avatar.memory_tools import memory_prompt, openai_tools, parse_args, run_tool
 from avatar.plugins import registry
 from avatar.websearch import brave_search
-from .base import Emit, History, compact_history, persona_text, summary_block, today_label, user_block
+from .base import Emit, History, Meter, compact_history, persona_text, summary_block, today_label, user_block
 from .openai_compat import SEARCH_TOOL, Aborted
 
 MAX_ROUNDS = 8
@@ -302,7 +302,7 @@ class MLXEngine:
     def _ensure_loaded(self, emit: Emit) -> None:
         if self.model is not None:
             return
-        emit({"type": "status", "status": "working", "detail": "carico il modello"})
+        emit({"type": "status", "status": "loading", "detail": "carico il modello"})
         self.load_error = None
         self.model, self.tokenizer = load_model(self.model_name)
         self.fmt = detect_format(self.tokenizer)
@@ -387,20 +387,25 @@ class MLXEngine:
         # Cache del prompt: la parte già vista (fotografia del turno precedente) non viene ricalcolata.
         tokens, cut, prompt = self._prompt_tokens()
         think.inside = prompt.rstrip().endswith(f["think"][0])   # il template ha già aperto il blocco di pensiero
+        snap = _loaded["snap"]
+        known = len(snap["tokens"]) if snap and tokens[: len(snap["tokens"])] == snap["tokens"] else 0
+        emit({"type": "status", "status": "thinking", "detail": f"preparo il contesto · {len(tokens) - known} token nuovi su {len(tokens)}"})
         cache = self._prefill(tokens[:-1], min(cut, len(tokens) - 1))
         generated: list[int] = []
+        meter = Meter(emit)
         try:
             for r in stream_generate(self.model, self.tokenizer, tokens[-1:], max_tokens=MAX_TOKENS, sampler=sampler, prompt_cache=cache):
                 if abort.is_set():
                     raise Aborted()
                 generated.append(r.token)
+                meter.tick("thinking" if think.inside else "responding")
                 if DEBUG:
                     print(r.text, end="", flush=True)
                 visible = tools.push(think.push(r.text))
                 if visible:
                     if not announced:
                         announced.append(True)
-                        emit({"type": "status", "status": "responding"})
+                        meter.tick("responding", 0, force=True)
                     text += visible
                     emit({"type": "text", "delta": visible})
                 if r.finish_reason == "length":
@@ -421,7 +426,7 @@ class MLXEngine:
         full, sources, announced = "", [], []
         try:
             self._ensure_loaded(emit)
-            emit({"type": "status", "status": "thinking"})
+            emit({"type": "status", "status": "thinking", "detail": "penso"})
             for rnd in range(MAX_ROUNDS):
                 with _lock:
                     round_text, raw_calls, truncated = self._generate(emit, abort, announced)
@@ -443,6 +448,8 @@ class MLXEngine:
             full = full.strip() or "(nessuna risposta)"
             self.history.save()
             emit({"type": "done", "text": full, "sources": sources})
+            if len(self.history.messages) > 30:
+                emit({"type": "status", "status": "thinking", "detail": "riassumo la conversazione"})
             with _lock:
                 if compact_history(self.history, self.summarize):
                     _loaded["snap"] = None   # il prompt cambia: la fotografia non vale più

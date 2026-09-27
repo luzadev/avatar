@@ -7,7 +7,7 @@ import anthropic
 
 from avatar.memory_tools import anthropic_tools, memory_prompt, parse_args, run_tool
 from avatar.plugins import registry
-from .base import Emit, History, persona_text, today_label, user_block
+from .base import Meter, Emit, History, persona_text, today_label, user_block
 
 MODEL = "claude-opus-5"
 MAX_ROUNDS = 12
@@ -98,7 +98,7 @@ class AnthropicEngine:
         full = ""
         sources: list[dict] = []
         try:
-            emit({"type": "status", "status": "thinking"})
+            emit({"type": "status", "status": "thinking", "detail": "penso"})
             for _ in range(MAX_ROUNDS):
                 kwargs: dict = dict(
                     model=MODEL,
@@ -113,6 +113,7 @@ class AnthropicEngine:
                 if self._compaction:
                     kwargs["context_management"] = {"edits": [{"type": "compact_20260112"}]}
                 announced = False
+                meter = Meter(emit, unit="parole")
                 try:
                     with self.client.beta.messages.stream(**kwargs) as stream:
                         for event in stream:
@@ -126,10 +127,13 @@ class AnthropicEngine:
                                     emit({"type": "status", "status": "memory"})
                                 elif t == "thinking":
                                     emit({"type": "status", "status": "thinking"})
+                            elif event.type == "content_block_delta" and event.delta.type == "thinking_delta":
+                                meter.tick("thinking", getattr(event.delta, "thinking", "").count(" "))
                             elif event.type == "content_block_delta" and event.delta.type == "text_delta":
                                 if not announced:
                                     announced = True
-                                    emit({"type": "status", "status": "responding"})
+                                    meter.tick("responding", 0, force=True)
+                                meter.tick("responding", event.delta.text.count(" "))
                                 full += event.delta.text
                                 emit({"type": "text", "delta": event.delta.text})
                         message = stream.get_final_message()

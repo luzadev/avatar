@@ -148,7 +148,7 @@ def ultima(params: dict, ctx: dict) -> str:
 
 
 TOOLS = [
-    {"name": "immagine_genera", "description": "Genera un'immagine in locale (MLX) da una descrizione. Scrivi la descrizione in INGLESE, dettagliata (soggetto, ambiente, luce, stile, inquadratura), anche se l'utente parla italiano. formato: quadrata (default), orizzontale, verticale, schermo, piccola. L'immagine viene salvata e aperta in Anteprima; richiede 10-60 secondi, il primo uso scarica il modello. Con immagine_base (percorso) e forza (0-1) parte da un'immagine esistente.",
+    {"name": "immagine_genera", "description": "Genera un'immagine in locale (MLX) da una descrizione. Scrivi la descrizione in INGLESE traducendo FEDELMENTE la richiesta dell'utente: stessi soggetti e stessi dettagli, senza attenuare, censurare o cambiare ciò che ha chiesto; aggiungi solo dettagli tecnici (luce, inquadratura, stile) se mancano. Se l'utente ha scritto il prompt in inglese, usalo tale e quale. formato: quadrata (default), orizzontale, verticale, schermo, piccola. L'immagine viene salvata e aperta in Anteprima; richiede 10-60 secondi, il primo uso scarica il modello. Con immagine_base (percorso) e forza (0-1) parte da un'immagine esistente.",
      "parameters": {"type": "object", "properties": {"descrizione": {"type": "string"}, "formato": {"type": "string", "enum": ["quadrata", "orizzontale", "verticale", "schermo", "piccola"]},
                     "passi": {"type": "integer"}, "seme": {"type": "integer"}, "immagine_base": {"type": "string"}, "forza": {"type": "number"}, "mostra": {"type": "boolean"}},
                     "required": ["descrizione"]}, "run": genera},

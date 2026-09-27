@@ -872,22 +872,29 @@ class HudCanvas(QWidget):
 
         # status text
         sy = _sy_status
-        if self.muted:
-            txt, col = "⊘  MUTED",     qcol(C.MUTED_C)
-        elif self.speaking:
+        # Lo stato può avere un dettaglio dopo " · " (es. "THINKING · genero la risposta · 120 token · 59/s").
+        base, _, detail = self.state.partition(" · ")
+        detail = f" · {detail}" if detail else ""
+        if self.speaking:
             txt, col = "●  SPEAKING",  qcol(C.ACC)
-        elif self.state == "THINKING":
+        elif base == "THINKING":
             sym = "◈" if self._blink else "◇"
-            txt, col = f"{sym}  THINKING",   qcol(C.ACC2)
-        elif self.state == "PROCESSING":
+            txt, col = f"{sym}  THINKING{detail}",   qcol(C.ACC2)
+        elif base == "PROCESSING":
             sym = "▷" if self._blink else "▶"
-            txt, col = f"{sym}  PROCESSING", qcol(C.ACC2)
-        elif self.state.split(" ")[0] == "LISTENING":
+            txt, col = f"{sym}  PROCESSING{detail}", qcol(C.ACC2)
+        elif base == "LISTENING":
             sym = "●" if self._blink else "○"
             txt, col = f"{sym}  LISTENING",  qcol(C.GREEN)
         else:
             sym = "●" if self._blink else "○"
             txt, col = f"{sym}  {self.state}", qcol(C.PRI)
+        if self.muted:
+            # microfono spento: a riposo si vede MUTED, durante il lavoro resta il dettaglio con il segno ⊘
+            if base in ("LISTENING", "SLEEPING") and not self.speaking:
+                txt, col = "⊘  MUTED", qcol(C.MUTED_C)
+            else:
+                txt = "⊘ " + txt
 
         p.setPen(QPen(col, 1))
         p.setFont(QFont("Menlo", 14, QFont.Weight.Bold))
@@ -1789,11 +1796,12 @@ class CustomizeOverlay(QWidget):
 
 
 class PluginManagerOverlay(QWidget):
-    """Floating overlay — lists discovered plugins with per-plugin ON/OFF toggles."""
+    """Floating overlay — lists discovered plugins with per-plugin ON/OFF toggles.
+    Elenco scorrevole (non supera l'altezza della finestra), nome leggibile e descrizione sotto."""
 
-    _OW = 420
+    _OW = 560
 
-    def __init__(self, plugins: list[dict], parent=None):
+    def __init__(self, plugins: list[dict], parent=None, max_height: int = 0):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
@@ -1809,25 +1817,47 @@ class PluginManagerOverlay(QWidget):
         lay.setContentsMargins(20, 16, 20, 16)
         lay.setSpacing(6)
 
-        hdr = QLabel("🧩  PLUGIN MANAGER")
+        hdr = QLabel("🧩  PLUGIN")
         hdr.setFont(QFont("Menlo", 15, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         lay.addWidget(hdr)
+        sub = QLabel(f"{sum(1 for p in plugins if p.get('enabled') and p.get('valid'))} attivi su {len(plugins)} · clic su ON/OFF per cambiare")
+        sub.setFont(QFont("Menlo", 10)); sub.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        lay.addWidget(sub)
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
 
+        body = QWidget(); body.setStyleSheet("background: transparent;")
+        blay = QVBoxLayout(body); blay.setContentsMargins(0, 0, 8, 0); blay.setSpacing(4)
         if not plugins:
-            empty = QLabel("No plugins found in /plugins.")
+            empty = QLabel("Nessun plugin trovato nella cartella plugins/.")
             empty.setFont(QFont("Menlo", 11))
             empty.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-            lay.addWidget(empty)
+            blay.addWidget(empty)
+        locali = sorted((p for p in plugins if not str(p["name"]).startswith("mcp:")), key=lambda p: p["name"])
+        esterni = sorted((p for p in plugins if str(p["name"]).startswith("mcp:")), key=lambda p: p["name"])
+        for p in locali:
+            blay.addLayout(self._build_row(p))
+        if esterni:
+            t = QLabel("SERVER MCP"); t.setFont(QFont("Menlo", 10, QFont.Weight.Bold))
+            t.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent; margin-top: 8px;")
+            blay.addWidget(t)
+            for p in esterni:
+                blay.addLayout(self._build_row(p))
+        blay.addStretch(1)
 
-        for p in plugins:
-            lay.addLayout(self._build_row(p))
+        scroll = QScrollArea(); scroll.setWidget(body); scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame); scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget { background: transparent; }")
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        if max_height:
+            avail = max(160, max_height - 150)
+            scroll.setMaximumHeight(avail)
+            scroll.setMinimumHeight(min(avail, body.sizeHint().height() + 8))   # usa l'altezza disponibile prima di scorrere
+        lay.addWidget(scroll, 1)
 
         lay.addSpacing(4)
-        close_btn = QPushButton("CLOSE")
+        close_btn = QPushButton("CHIUDI")
         close_btn.setFixedHeight(30)
         close_btn.setFont(QFont("Menlo", 12))
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1841,23 +1871,37 @@ class PluginManagerOverlay(QWidget):
         close_btn.clicked.connect(self.hide)
         lay.addWidget(close_btn)
         self.adjustSize()
+        if max_height:
+            self.setMaximumHeight(max_height)
+
+    @staticmethod
+    def _titolo(name: str) -> str:
+        if name.startswith("mcp:"):
+            return name[4:]
+        speciali = {"home_assistant": "Casa (Home Assistant)", "server_assistenza": "Assistenza server", "whatsapp_archivio": "WhatsApp archivio",
+                    "whatsapp_live": "WhatsApp in tempo reale", "comandi_rapidi": "Comandi rapidi", "sms": "SMS", "mac": "Mac", "app": "App"}
+        return speciali.get(name, name.replace("_", " ").capitalize())
 
     def _build_row(self, p: dict) -> QHBoxLayout:
-        row = QHBoxLayout(); row.setSpacing(6)
-
-        label_text = p["name"] if p["valid"] else f"{p['name']}  (⚠ {p['file']})"
-        lbl = QLabel(label_text)
-        lbl.setFont(QFont("Menlo", 11))
+        row = QHBoxLayout(); row.setSpacing(10)
+        col = QVBoxLayout(); col.setSpacing(0)
+        lbl = QLabel(self._titolo(p["name"]) if p["valid"] else f"{self._titolo(p['name'])}  (⚠ non caricato)")
+        lbl.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
         lbl.setStyleSheet(f"color: {C.TEXT if p['valid'] else C.TEXT_DIM}; background: transparent;")
-        lbl.setToolTip(p["description"] if p["valid"] else p["error"])
-        lbl.setWordWrap(False)
-        row.addWidget(lbl, stretch=1)
+        col.addWidget(lbl)
+        desc = (p["description"] if p["valid"] else p["error"]) or ""
+        desc = " ".join(desc.split())
+        d = QLabel(desc); d.setFont(QFont("Menlo", 10)); d.setWordWrap(True)
+        d.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        d.setMaximumWidth(self._OW - 150)
+        col.addWidget(d)
+        row.addLayout(col, stretch=1)
 
         btn = QPushButton()
         btn.setFixedSize(72, 24)
         btn.setFont(QFont("Menlo", 10, QFont.Weight.Bold))
         if not p["valid"]:
-            btn.setText("BROKEN")
+            btn.setText("ERRORE")
             btn.setEnabled(False)
             btn.setStyleSheet(f"""
                 QPushButton {{
@@ -1869,7 +1913,7 @@ class PluginManagerOverlay(QWidget):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self._style_toggle(btn, p["enabled"])
             btn.clicked.connect(lambda _, name=p["name"], b=btn: self._toggle(name, b))
-        row.addWidget(btn)
+        row.addWidget(btn, alignment=Qt.AlignmentFlag.AlignTop)
         return row
 
     def _style_toggle(self, btn: QPushButton, enabled: bool):
@@ -5096,7 +5140,7 @@ class MainWindow(QMainWindow):
     def _open_plugin_manager(self):
         plugins = self.get_plugins() if self.get_plugins else []
         cw = self.centralWidget()
-        ov = PluginManagerOverlay(plugins, parent=cw)
+        ov = PluginManagerOverlay(plugins, parent=cw, max_height=cw.height() - 40)
         ov.adjustSize()
         ov.setGeometry(
             (cw.width()  - ov.width())  // 2,

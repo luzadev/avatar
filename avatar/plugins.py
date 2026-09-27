@@ -139,7 +139,17 @@ class PluginRegistry:
         if tool is None:
             return f"Strumento sconosciuto: {name}"
         try:
-            return str(tool.run(dict(args or {}), self.ctx) or "Fatto.")
+            out = str(tool.run(dict(args or {}), self.ctx) or "Fatto.")
+            on_image, on_file = self.ctx.get("on_image"), self.ctx.get("on_file")
+            for line in out.splitlines():
+                try:
+                    if on_image and line.startswith("IMMAGINE: "):
+                        on_image(line[10:].strip())
+                    elif on_file and line.startswith("FILE: "):
+                        on_file(line[6:].strip())
+                except Exception as e:
+                    print(f"[plugin] invio al telefono: {e}")
+            return out
         except Exception as err:
             if not isinstance(err, (RuntimeError, ValueError)):
                 traceback.print_exc()

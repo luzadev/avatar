@@ -54,6 +54,8 @@ DEFAULTS: dict[str, Any] = {
     "homeassistant_url": "http://homeassistant.local:8123",   # Home Assistant (token nel portachiavi)
     "immagini_famiglia": "z-image-turbo",   # z-image-turbo | schnell | dev | qwen (comando mflux e passi predefiniti)
     "immagini_modello": "",                 # repo Hugging Face o cartella; vuoto = predefinito della famiglia
+    "remote_enabled": True,                 # app web per il telefono (HTTPS sulla rete locale)
+    "remote_token": "",                     # chiave di abbinamento (generata al primo avvio)
 }
 
 SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash", "elevenlabs_api_key", "homeassistant_token")

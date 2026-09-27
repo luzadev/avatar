@@ -9,7 +9,7 @@ import openai
 from avatar.memory_tools import memory_prompt, openai_tools, parse_args, run_tool
 from avatar.plugins import registry
 from avatar.websearch import brave_search
-from .base import Emit, History, compact_history, persona_text, summary_block, today_label, user_block
+from .base import Emit, History, Meter, compact_history, persona_text, summary_block, today_label, user_block
 
 MAX_ROUNDS = 8
 MAX_HISTORY = 30
@@ -149,7 +149,7 @@ class OpenAICompatEngine:
         full = ""
         sources: list[dict] = []
         try:
-            emit({"type": "status", "status": "thinking"})
+            emit({"type": "status", "status": "thinking", "detail": "penso"})
             for rnd in range(MAX_ROUNDS):
                 tools = self._tools()
                 kwargs: dict = dict(model=self.model, messages=self._messages(), stream=True)
@@ -164,6 +164,7 @@ class OpenAICompatEngine:
                         continue
                     raise
                 flt, calls, round_text, announced, finish = ThinkFilter(), {}, "", False, None
+                meter = Meter(emit, unit="parole")
                 for chunk in stream:
                     if abort.is_set():
                         stream.close()
@@ -174,10 +175,11 @@ class OpenAICompatEngine:
                     delta = choice.delta
                     if delta and delta.content:
                         visible = flt.push(delta.content)
+                        meter.tick("thinking" if flt.inside else "responding", delta.content.count(" "))
                         if visible:
                             if not announced:
                                 announced = True
-                                emit({"type": "status", "status": "responding"})
+                                meter.tick("responding", 0, force=True)
                             round_text += visible
                             full += visible
                             emit({"type": "text", "delta": visible})

@@ -70,6 +70,41 @@ def main() -> None:
     # Questi due sono attributi della finestra, non della facciata JarvisUI.
     ui._win.on_new_conversation = assistant.reset_conversation
 
+    # ── Accesso remoto (app web per il telefono): specchia stato, registro e conferme; riceve testo e voce ──
+    from avatar.remote import RemoteServer
+    remote = RemoteServer(assistant, settings, ui.write_log)
+    assistant.remote = remote
+    _set_state, _write_log, _show_confirm, _hide_confirm = ui.set_state, ui.write_log, ui.show_confirm, ui.hide_confirm
+
+    def set_state(state: str) -> None:
+        _set_state(state); remote.on_state(state)
+
+    def write_log(text: str) -> None:
+        _write_log(text); remote.on_log(text)
+
+    def show_confirm(title: str, detail: str) -> None:
+        _show_confirm(title, detail); remote.on_confirm(title, detail)
+
+    def hide_confirm() -> None:
+        _hide_confirm(); remote.on_confirm_hide()
+
+    ui.set_state, ui.write_log, ui.show_confirm, ui.hide_confirm = set_state, write_log, show_confirm, hide_confirm
+    confirm.bind(ui.show_confirm, ui.hide_confirm, ui.write_log)
+    registry.ctx["log"] = ui.write_log
+    registry.ctx["on_image"] = remote.on_image
+    registry.ctx["on_file"] = remote.on_file
+    ui._win.on_remote_clicked = remote.urls
+    from PyQt6.QtCore import QObject, pyqtSignal
+
+    class _Bridge(QObject):
+        apply = pyqtSignal()
+    bridge = _Bridge(); bridge.apply.connect(assistant.reconfigure)
+    remote.apply_cb = bridge.apply.emit
+    ui._win._remote_bridge = bridge
+    if settings.get("remote_enabled", True):
+        remote.start()
+        ui._app.aboutToQuit.connect(remote.stop)
+
     def open_settings() -> None:
         SettingsDialog(settings, assistant.reconfigure, parent=ui._win).exec()
 

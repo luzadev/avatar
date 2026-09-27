@@ -16,6 +16,32 @@ Emit = Callable[[Event], None]
 PERSONA_FILE = BASE_DIR / "avatar" / "persona.md"
 
 
+class Meter:
+    """Stato dettagliato durante la generazione: "ragiono · 80 token", "genero la risposta · 120 token · 45/s".
+    Emette al massimo ogni `every` secondi per non intasare l'interfaccia."""
+
+    def __init__(self, emit: "Emit", every: float = 0.5, unit: str = "token") -> None:
+        self.emit, self.every, self.unit = emit, every, unit
+        self.n, self.t0, self.last, self.phase = 0, None, 0.0, ""
+
+    def tick(self, phase: str, count: int = 1, force: bool = False) -> None:
+        import time
+        now = time.monotonic()
+        if self.t0 is None or phase != self.phase:
+            self.t0, self.n, self.phase = now, 0, phase
+        self.n += count
+        if not force and now - self.last < self.every:
+            return
+        self.last = now
+        rate = self.n / max(0.2, now - self.t0)
+        if phase == "thinking":
+            self.emit({"type": "status", "status": "thinking", "detail": f"ragiono · {self.n} {self.unit}" if self.n else "ragiono"})
+        elif self.n < 8:
+            self.emit({"type": "status", "status": "responding", "detail": "genero la risposta"})
+        else:
+            self.emit({"type": "status", "status": "responding", "detail": f"genero la risposta · {self.n} {self.unit} · {rate:.0f}/s"})
+
+
 class ChatBackend(Protocol):
     def send(self, user_text: str, emit: Emit, abort: threading.Event) -> None: ...
     def reset(self) -> None: ...
