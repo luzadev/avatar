@@ -67,3 +67,63 @@ class History:
     def clear(self) -> None:
         self.messages, self.meta = [], {}
         self.save()
+
+
+# ── Compattazione della cronologia (motori locali) ───────────────────────────
+COMPACT_AFTER = 30   # oltre questo numero di messaggi i più vecchi vengono riassunti
+COMPACT_KEEP = 12    # messaggi recenti lasciati per esteso
+
+
+def render_messages(msgs: list, per_msg: int = 600) -> str:
+    out = []
+    for m in msgs:
+        role = m.get("role")
+        text = str(m.get("content") or "").strip()
+        if role == "user":
+            out.append("Utente: " + text[:per_msg])
+        elif role == "assistant":
+            calls = m.get("tool_calls") or []
+            if calls:
+                names = ", ".join(str((c.get("function") or {}).get("name", "?")) for c in calls)
+                text = (text + f" [usa strumenti: {names}]").strip()
+            if text:
+                out.append("Assistente: " + text[:per_msg])
+        elif role == "tool":
+            out.append(f"Risultato di {m.get('name', 'strumento')}: " + text[:200])
+    return "\n".join(out)
+
+
+def summary_prompt(previous: str, new_text: str) -> str:
+    return ("Riassumi in italiano, in modo compatto (al massimo 150 parole), ciò che serve per continuare la conversazione: "
+            "richieste dell'utente, cose fatte o decise, fatti e preferenze emersi, questioni aperte. Niente saluti, niente frasi generiche.\n\n"
+            + (f"Riassunto precedente:\n{previous}\n\n" if previous else "")
+            + f"Nuovi messaggi:\n{new_text}\n\nRiassunto aggiornato:")
+
+
+def compact_history(history: "History", summarize: Callable[[str], str]) -> bool:
+    """Se la cronologia è lunga, riassume i messaggi più vecchi in history.meta['summary'] e li rimuove."""
+    msgs = history.messages
+    if len(msgs) <= COMPACT_AFTER:
+        return False
+    cut = len(msgs) - COMPACT_KEEP
+    while cut < len(msgs) and msgs[cut].get("role") != "user":
+        cut += 1
+    if cut <= 0 or cut >= len(msgs):
+        return False
+    text = render_messages(msgs[:cut])
+    try:
+        summary = (summarize(summary_prompt(str(history.meta.get("summary") or ""), text)) or "").strip()
+    except Exception as err:
+        print(f"[cronologia] riassunto fallito: {err}")
+        return False
+    if not summary:
+        return False
+    history.meta["summary"] = summary[:2000]
+    history.messages = msgs[cut:]
+    history.save()
+    return True
+
+
+def summary_block(history: "History") -> str:
+    s = str(history.meta.get("summary") or "").strip()
+    return f"\n\nRiassunto della conversazione precedente (i messaggi più vecchi sono stati compattati):\n{s}" if s else ""

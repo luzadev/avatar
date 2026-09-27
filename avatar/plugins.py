@@ -91,6 +91,24 @@ class PluginRegistry:
             self.modules[mod_name] = info
         return self
 
+    def add_external(self, module: str, description: str, tools: list[dict]) -> None:
+        """Registra strumenti forniti a runtime (server MCP), sostituendo quelli dello stesso modulo."""
+        self.load()
+        self.remove_module(module)
+        info = {"name": module, "description": description, "valid": True, "error": "", "tools": []}
+        for t in tools:
+            name = str(t["name"])
+            if name in self.tools:   # nome già usato da un plugin: prefissa
+                name = f"x_{name}"[:64]
+            self.tools[name] = Tool(module, name, str(t.get("description", "")), _normalize_schema(t.get("parameters", {})), t["run"])
+            info["tools"].append(name)
+        self.modules[module] = info
+
+    def remove_module(self, module: str) -> None:
+        for name in [n for n, t in self.tools.items() if t.module == module]:
+            self.tools.pop(name, None)
+        self.modules.pop(module, None)
+
     def _enabled(self, module: str) -> bool:
         try:
             from memory.config_manager import get_plugin_enabled

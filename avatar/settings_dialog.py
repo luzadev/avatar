@@ -1,6 +1,7 @@
 """Finestra impostazioni: motore, chiavi, voce e riconoscimento vocale."""
 from __future__ import annotations
 
+import json
 import sys
 import threading
 from pathlib import Path
@@ -65,7 +66,7 @@ class SettingsDialog(QDialog):
             self.tabs.addTab(sc, title)
             lay.addStretch(1)
             return lay
-        pg_motore, pg_voce, pg_msg, pg_mon, pg_casa = page("Motore"), page("Voce e avatar"), page("Messaggistica"), page("Monitor"), page("Casa")
+        pg_motore, pg_voce, pg_msg, pg_mon, pg_casa, pg_tool = page("Motore"), page("Voce e avatar"), page("Messaggistica"), page("Monitor"), page("Casa"), page("Strumenti")
         def add(lay, item):   # inserisce prima dello stretch finale
             if isinstance(item, QWidget): lay.insertWidget(lay.count() - 1, item)
             else: lay.insertLayout(lay.count() - 1, item)
@@ -260,6 +261,36 @@ class SettingsDialog(QDialog):
         self.ha_hint = QLabel(""); self.ha_hint.setWordWrap(True); form_ha.addRow("", self.ha_hint)
         add(pg_casa, form_ha)
 
+        # ── Strumenti (server MCP esterni) ────────────────────────────────
+        from PyQt6.QtWidgets import QPlainTextEdit
+        from .mcp_client import CONFIG_FILE as MCP_FILE, manager as mcp_manager
+        form_mcp = QFormLayout()
+        form_mcp.addRow(QLabel("Server MCP esterni: stesso formato di Claude Desktop (mcpServers con command/args/env, oppure url/headers). "
+                               "Gli strumenti diventano disponibili a tutti i motori; con Claude Code i server vengono passati direttamente a claude."))
+        self.mcp_text = QPlainTextEdit()
+        try:
+            self.mcp_text.setPlainText(MCP_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            self.mcp_text.setPlainText('{\n  "mcpServers": {\n  }\n}\n')
+        self.mcp_text.setMinimumHeight(220)
+        form_mcp.addRow(self.mcp_text)
+        row = QHBoxLayout()
+        b = QPushButton("Applica e ricollega"); b.clicked.connect(self._mcp_apply); row.addWidget(b)
+        b = QPushButton("Esempio"); b.clicked.connect(self._mcp_example); row.addWidget(b)
+        row.addStretch()
+        form_mcp.addRow(row)
+        self.mcp_hint = QLabel(mcp_manager.status()); self.mcp_hint.setWordWrap(True); form_mcp.addRow(self.mcp_hint)
+        add(pg_tool, form_mcp)
+
+        # ── Immagini (mflux) ──────────────────────────────────────────────
+        form_img = QFormLayout()
+        form_img.addRow(QLabel("Generazione immagini in locale (mflux, MLX). Il primo uso scarica il modello da Hugging Face."))
+        self.img_fam = _combo([("z-image-turbo", "Z-Image Turbo (veloce, 8 passi, consigliato)"), ("schnell", "FLUX.1 schnell (4 passi)"), ("dev", "FLUX.1 dev (lento, licenza non commerciale)"), ("qwen", "Qwen-Image (pesante, ottimo col testo)")], s.get("immagini_famiglia") or "z-image-turbo")
+        form_img.addRow("Famiglia", self.img_fam)
+        self.img_model = QLineEdit(str(s.get("immagini_modello") or "")); self.img_model.setPlaceholderText("vuoto = predefinito (es. mflux-community/z-image-turbo-mflux-q4)")
+        form_img.addRow("Modello (repo Hugging Face)", self.img_model)
+        add(pg_tool, form_img)
+
         btns = QHBoxLayout(); btns.addStretch()
         cancel = QPushButton("Annulla"); cancel.clicked.connect(self.reject); btns.addWidget(cancel)
         save = QPushButton("Salva"); save.setObjectName("primary"); save.clicked.connect(self._save); btns.addWidget(save)
@@ -407,6 +438,25 @@ class SettingsDialog(QDialog):
                 self._async.emit("el_error", str(err)[:120])
         threading.Thread(target=work, daemon=True).start()
 
+    def _mcp_example(self) -> None:
+        self.mcp_text.setPlainText(json.dumps({"mcpServers": {
+            "filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", str(Path.home() / "Documents")]},
+            "remoto": {"url": "https://esempio.it/mcp", "headers": {"Authorization": "Bearer TOKEN"}, "disabled": True},
+        }}, indent=2, ensure_ascii=False))
+
+    def _mcp_apply(self) -> None:
+        from .mcp_client import save_config, manager as mcp_manager
+        try:
+            save_config(self.mcp_text.toPlainText())
+        except Exception as err:
+            self.mcp_hint.setText(f"JSON non valido: {err}"); return
+        self.mcp_hint.setText("Collego i server…")
+
+        def go():
+            mcp_manager.reload()
+            self._async.emit("mcp", mcp_manager.status())
+        threading.Thread(target=go, daemon=True).start()
+
     def _ha_check(self) -> None:
         vals = {"homeassistant_url": self.ha_url.text().strip().rstrip("/")}
         if self.ha_token.text().strip():
@@ -427,6 +477,8 @@ class SettingsDialog(QDialog):
     def _on_async(self, kind: str, payload) -> None:
         if kind == "ha":
             self.ha_hint.setText(str(payload)); return
+        if kind == "mcp":
+            self.mcp_hint.setText(str(payload)); return
         if kind == "vb":
             self.vb_profile.clear()
             for pid, label in payload:
@@ -517,6 +569,7 @@ class SettingsDialog(QDialog):
             "server_assist_dir": self.srv_dir.text().strip() or "/opt/aiserverassistance",
             "server_assist_bot": self.srv_bot.text().strip().lstrip("@") or "luzaserver_bot",
             "homeassistant_url": self.ha_url.text().strip().rstrip("/"),
+            "immagini_famiglia": self.img_fam.currentData() or "z-image-turbo", "immagini_modello": self.img_model.text().strip(),
         }
         if self.ha_token.text().strip():
             values["homeassistant_token"] = self.ha_token.text().strip()

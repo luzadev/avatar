@@ -62,6 +62,9 @@ def main() -> None:
     confirm.bind(ui.show_confirm, ui.hide_confirm, ui.write_log)
     registry.ctx = {"say": assistant.say, "log": ui.write_log, "confirm": confirm.request, "player": ui}
     ui.get_plugins = registry.list_for_ui
+    from avatar.mcp_client import manager as mcp_manager
+    mcp_manager.start(registry, ui.write_log)
+    ui._app.aboutToQuit.connect(mcp_manager.stop)
     ui.get_plugin_settings = lambda: []
     ui.request_say = assistant.say
     # Questi due sono attributi della finestra, non della facciata JarvisUI.

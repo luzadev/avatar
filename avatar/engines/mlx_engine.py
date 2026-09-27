@@ -16,7 +16,7 @@ from pathlib import Path
 from avatar.memory_tools import memory_prompt, openai_tools, parse_args, run_tool
 from avatar.plugins import registry
 from avatar.websearch import brave_search
-from .base import Emit, History, persona_text, today_label, user_block
+from .base import Emit, History, compact_history, persona_text, summary_block, today_label, user_block
 from .openai_compat import SEARCH_TOOL, Aborted
 
 MAX_ROUNDS = 8
@@ -323,7 +323,7 @@ class MLXEngine:
                 "- Chiama gli strumenti solo nel formato previsto dal tuo template e mai descrivendoli a parole.")
         note += ("\n- Per informazioni aggiornate chiama cerca_web e rispondi in base ai risultati." if self.search_api_key
                  else "\n- Non hai accesso al web: se ti chiedono informazioni aggiornate, dillo chiaramente.")
-        return f"{persona_text(self.assistant_name)}\n\n{user_block(self.user_name, memory_prompt())}{note}"
+        return f"{persona_text(self.assistant_name)}\n\n{user_block(self.user_name, memory_prompt())}{summary_block(self.history)}{note}"
 
     def _recent(self) -> list:
         msgs = self.history.messages
@@ -443,12 +443,31 @@ class MLXEngine:
             full = full.strip() or "(nessuna risposta)"
             self.history.save()
             emit({"type": "done", "text": full, "sources": sources})
+            with _lock:
+                if compact_history(self.history, self.summarize):
+                    _loaded["snap"] = None   # il prompt cambia: la fotografia non vale più
         except Aborted:
             self._rollback()
             emit({"type": "error", "message": "Risposta interrotta.", "aborted": True})
         except Exception as err:
             self._rollback()
             emit({"type": "error", "message": f"Modello interno: {err}"})
+
+    def summarize(self, prompt: str) -> str:
+        """Genera un testo breve col modello caricato, senza strumenti né cache condivisa (usato per compattare la cronologia)."""
+        from mlx_lm import stream_generate
+        from mlx_lm.sample_utils import make_sampler
+        from mlx_lm.models.cache import make_prompt_cache
+        msgs = [{"role": "system", "content": "Sei un assistente che riassume conversazioni in italiano, in modo fedele e compatto."},
+                {"role": "user", "content": prompt}]
+        text = self.tokenizer.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, enable_thinking=False)
+        f = FORMATS[self.fmt]
+        think = TagFilter(*f["think"], keep=False)
+        think.inside = text.rstrip().endswith(f["think"][0])
+        out = ""
+        for r in stream_generate(self.model, self.tokenizer, text, max_tokens=400, sampler=make_sampler(temp=0.3, top_p=0.9), prompt_cache=make_prompt_cache(self.model)):
+            out += think.push(r.text)
+        return (out + think.flush()).strip()
 
     def _rollback(self) -> None:
         msgs = self.history.messages

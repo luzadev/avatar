@@ -52,6 +52,8 @@ DEFAULTS: dict[str, Any] = {
     "server_assist_dir": "/opt/aiserverassistance",   # cartella del bot sul server ponte (contiene .env)
     "server_assist_bot": "luzaserver_bot",            # username Telegram del bot sysadmin
     "homeassistant_url": "http://homeassistant.local:8123",   # Home Assistant (token nel portachiavi)
+    "immagini_famiglia": "z-image-turbo",   # z-image-turbo | schnell | dev | qwen (comando mflux e passi predefiniti)
+    "immagini_modello": "",                 # repo Hugging Face o cartella; vuoto = predefinito della famiglia
 }
 
 SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash", "elevenlabs_api_key", "homeassistant_token")

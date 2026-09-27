@@ -9,7 +9,7 @@ import openai
 from avatar.memory_tools import memory_prompt, openai_tools, parse_args, run_tool
 from avatar.plugins import registry
 from avatar.websearch import brave_search
-from .base import Emit, History, persona_text, today_label, user_block
+from .base import Emit, History, compact_history, persona_text, summary_block, today_label, user_block
 
 MAX_ROUNDS = 8
 MAX_HISTORY = 30
@@ -98,7 +98,7 @@ class OpenAICompatEngine:
                      else "\n- Non hai accesso al web: se ti chiedono informazioni aggiornate, dillo chiaramente.")
         else:
             note = "\n\nNota: in questa modalità non hai strumenti (niente memoria automatica né ricerca web)."
-        return {"role": "system", "content": f"{persona_text(self.assistant_name)}\n\n{user_block(self.user_name, memory_prompt())}{note}"}
+        return {"role": "system", "content": f"{persona_text(self.assistant_name)}\n\n{user_block(self.user_name, memory_prompt())}{summary_block(self.history)}{note}"}
 
     def _recent(self) -> list:
         msgs = self.history.messages
@@ -210,12 +210,20 @@ class OpenAICompatEngine:
             full = full.strip() or "(nessuna risposta)"
             self.history.save()
             emit({"type": "done", "text": full, "sources": sources})
+            compact_history(self.history, self.summarize)
         except Aborted:
             self._rollback()
             emit({"type": "error", "message": "Risposta interrotta.", "aborted": True})
         except Exception as err:
             self._rollback()
             emit({"type": "error", "message": friendly_error(err, self.base_url)})
+
+    def summarize(self, prompt: str) -> str:
+        r = self.client.chat.completions.create(model=self.model, max_tokens=400, temperature=0.3, messages=[
+            {"role": "system", "content": "Sei un assistente che riassume conversazioni in italiano, in modo fedele e compatto."},
+            {"role": "user", "content": prompt}])
+        flt = ThinkFilter()
+        return (flt.push(r.choices[0].message.content or "") + flt.carry).strip()
 
     def _rollback(self) -> None:
         msgs = self.history.messages

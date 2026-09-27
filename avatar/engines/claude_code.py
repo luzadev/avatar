@@ -112,10 +112,33 @@ class ClaudeCodeEngine:
                 flags["tools"] = flags["tools"] + ",Read"
             flags["allowed"] = [*flags["allowed"], f"Read(//{attach_path.lstrip('/')})"]
         mcp = {"mcpServers": {"avatar": {"command": sys.executable, "args": [str(MCP_SCRIPT)]}}}
+        allowed_mcp = list(MEMORY_TOOLS)
+        disallowed_mcp: list[str] = []
+        try:
+            from avatar.mcp_client import load_config
+            for name, c in load_config().items():
+                if c.get("disabled") or name == "avatar":
+                    continue
+                mcp["mcpServers"][name] = {k: v for k, v in c.items() if k in ("command", "args", "env", "cwd", "url", "headers", "type")}
+                if c.get("url") and "type" not in c:
+                    mcp["mcpServers"][name]["type"] = "http"
+                if c.get("tools") or c.get("exclude"):
+                    # Filtri: consenti solo gli strumenti scelti e nega gli altri (l'elenco completo arriva dal client in-app, se collegato).
+                    from avatar.mcp_client import manager, selected_tools
+                    srv = manager.servers.get(name)
+                    if srv is not None:
+                        chosen = {t["name"] for t in selected_tools(c, srv.tools)}
+                        allowed_mcp += [f"mcp__{name}__{t}" for t in sorted(chosen)]
+                        disallowed_mcp += [f"mcp__{name}__{t['name']}" for t in srv.tools if t["name"] not in chosen]
+                        continue
+                allowed_mcp.append(f"mcp__{name}")
+        except Exception as err:
+            print(f"[claude code] server MCP esterni ignorati: {err}")
         args = ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                 "--model", self.model, "--effort", self.effort,
-                "--tools", flags["tools"], "--allowedTools", ",".join(flags["allowed"] + MEMORY_TOOLS),
+                "--tools", flags["tools"], "--allowedTools", ",".join(flags["allowed"] + allowed_mcp),
                 "--mcp-config", json.dumps(mcp), "--strict-mcp-config",
+                *(["--disallowedTools", ",".join(disallowed_mcp)] if disallowed_mcp else []),
                 "--system-prompt-snapshot", "off",
                 "--resume" if resume else "--session-id", session_id]
         if flags["mode"]:

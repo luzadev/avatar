@@ -125,6 +125,40 @@ def save_memory(memory: dict) -> None:
             json.dumps(memory, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+    try:
+        export_markdown(memory)
+    except Exception as err:
+        print(f"[Memory] esportazione Markdown fallita: {err}")
+
+
+EXPORT_DIR = get_base_dir() / "data" / "memoria"
+_EXPORT_LABELS = {"identity": "Identità", "preferences": "Preferenze", "projects": "Progetti", "relationships": "Persone",
+                  "wishes": "Desideri e obiettivi", "notes": "Note"}
+
+
+def export_markdown(memory: dict, folder: Path | None = None) -> Path:
+    """Specchia la memoria in una cartella di file Markdown (apribile come vault Obsidian): un file per categoria più un indice."""
+    folder = folder or EXPORT_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    index = ["# Memoria di LuZa", "", f"Aggiornata: {datetime.now():%Y-%m-%d %H:%M}", ""]
+    for cat, label in _EXPORT_LABELS.items():
+        entries = memory.get(cat) or {}
+        if not isinstance(entries, dict):
+            continue
+        lines = ["---", f"categoria: {cat}", f"voci: {len(entries)}", "---", "", f"# {label}", ""]
+        for key, entry in sorted(entries.items(), key=lambda kv: (kv[1].get("updated", "") if isinstance(kv[1], dict) else ""), reverse=True):
+            val = _entry_value(entry)
+            upd = entry.get("updated", "") if isinstance(entry, dict) else ""
+            lines.append(f"- **{_pretty(key)}**: {val}" + (f" _(aggiornato {upd})_" if upd else ""))
+        (folder / f"{label}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        index.append(f"- [[{label}]] — {len(entries)} voci")
+    sessions = memory.get("sessions") or []
+    if isinstance(sessions, list) and sessions:
+        lines = ["# Sessioni recenti", ""] + [f"- {e.get('date', '')}: {e.get('summary', '')}" for e in sessions]
+        (folder / "Sessioni recenti.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        index.append("- [[Sessioni recenti]]")
+    (folder / "Memoria.md").write_text("\n".join(index) + "\n", encoding="utf-8")
+    return folder
 
 
 def _truncate_value(val: str) -> str:

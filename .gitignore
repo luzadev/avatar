@@ -8,6 +8,7 @@ whatsapp_bridge/node_modules/
 data/
 config/api_keys.json
 config/settings.json
+config/mcp.json
 memory/long_term.json
 *.session
 *.session-journal
@@ -20,4 +21,5 @@ avatar3d/models_archivio/
 *.log
 .DS_Store
 .venv-chatterbox/
+.venv-mflux/
 tts_chatterbox/test_*.py
