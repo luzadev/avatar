@@ -119,7 +119,18 @@ def memory_prompt() -> str:
         block = mm.format_memory_for_prompt(mm.load_memory())
     except Exception:
         block = ""
-    return block or "Nessuna memoria salvata finora."
+    block = block or "Nessuna memoria salvata finora."
+    try:
+        import sys as _s
+        from avatar.settings import BASE_DIR as _B
+        _s.path.insert(0, str(_B / "plugins"))
+        import importlib
+        riga = importlib.import_module("come_me").riga_prompt()
+        if riga:
+            block += "\n\n" + riga
+    except Exception:
+        pass
+    return block
 
 
 def parse_args(raw) -> dict:

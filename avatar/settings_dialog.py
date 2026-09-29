@@ -253,6 +253,10 @@ class SettingsDialog(QDialog):
         form5.addRow("Cosa merita un avviso", self.mon_rules)
         self.mon_excl = QLineEdit(s.get("monitor_escludi") or ""); self.mon_excl.setPlaceholderText("es. newsletter, offerta, gruppo Calcetto, Amazon  — parole separate da virgola, cercate in mittente, chat e testo")
         form5.addRow("Escludi dagli avvisi", self.mon_excl)
+        self.umore_on = QCheckBox("Stima il mio umore ogni ora dai messaggi che scrivo (WhatsApp, Telegram) e adatta il tono; dati solo sul Mac")
+        self.umore_on.setChecked(bool(s.get("umore_enabled"))); form5.addRow("Umore", self.umore_on)
+        self.io_nomi = QLineEdit(str(s.get("io_nomi") or "Luciano")); self.io_nomi.setPlaceholderText("nomi con cui compaio nelle chat esportate, separati da virgola")
+        form5.addRow("Il mio nome nelle chat", self.io_nomi)
         add(pg_mon, form5)
 
         # ── Casa (Home Assistant) ─────────────────────────────────────────
@@ -583,6 +587,7 @@ class SettingsDialog(QDialog):
             "monitor_intervallo": int(self.mon_int.currentData() or 60),
             "monitor_regole": self.mon_rules.text().strip(),
             "monitor_escludi": self.mon_excl.text().strip(),
+            "umore_enabled": self.umore_on.isChecked(), "io_nomi": self.io_nomi.text().strip() or "Luciano",
             "server_assist_ssh": self.srv_ssh.text().strip(),
             "server_assist_dir": self.srv_dir.text().strip() or "/opt/aiserverassistance",
             "server_assist_bot": self.srv_bot.text().strip().lstrip("@") or "luzaserver_bot",

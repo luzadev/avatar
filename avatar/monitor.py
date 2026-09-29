@@ -56,12 +56,23 @@ class Monitor:
 
     def _loop(self) -> None:
         time.sleep(20)
+        last_mood = 0.0
         while not self._stop.is_set():
             if self.settings.get("monitor_enabled"):
                 try:
                     self.scan()
                 except Exception as err:
                     print(f"[monitor] {err}")
+            if self.settings.get("umore_enabled") and time.time() - last_mood > 3600:
+                last_mood = time.time()
+                try:
+                    import sys as _s; _s.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugins"))
+                    import importlib
+                    r = importlib.import_module("come_me").analizza_umore(6)
+                    if r.get("tono"):
+                        self.ui.write_log(f"SYS: Umore stimato: {r['tono']} ({r.get('nota', '')[:80]})")
+                except Exception as err:
+                    print(f"[umore] {err}")
             self._stop.wait(int(self.settings.get("monitor_intervallo") or 60))
 
     # ── raccolta ─────────────────────────────────────────────────────────
