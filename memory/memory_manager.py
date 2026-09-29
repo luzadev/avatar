@@ -52,6 +52,7 @@ def _empty_memory() -> dict:
         "relationships": {},
         "wishes":        {},
         "notes":         {},
+        "habits":        {},
     }
 
 def load_memory() -> dict:
@@ -133,7 +134,7 @@ def save_memory(memory: dict) -> None:
 
 EXPORT_DIR = get_base_dir() / "data" / "memoria"
 _EXPORT_LABELS = {"identity": "Identità", "preferences": "Preferenze", "projects": "Progetti", "relationships": "Persone",
-                  "wishes": "Desideri e obiettivi", "notes": "Note"}
+                  "wishes": "Desideri e obiettivi", "notes": "Note", "habits": "Abitudini"}
 
 
 def export_markdown(memory: dict, folder: Path | None = None) -> Path:
@@ -219,6 +220,7 @@ _CATEGORY_LABELS = {
     "relationships": "People in their life",
     "wishes":        "Wishes / plans",
     "notes":         "Notes",
+    "habits":        "Habits / routines (learned from activity)",
 }
 
 _IDENTITY_FIELDS = ["name", "age", "birthday", "city", "job",
@@ -436,7 +438,7 @@ def all_entries_for_ui() -> list[dict]:
     return rows
 
 def remember(key: str, value: str, category: str = "notes") -> str:
-    valid = {"identity", "preferences", "projects", "relationships", "wishes", "notes"}
+    valid = {"identity", "preferences", "projects", "relationships", "wishes", "notes", "habits"}
     if category not in valid:
         category = "notes"
     update_memory({category: {key: {"value": value}}})

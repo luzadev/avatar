@@ -44,6 +44,18 @@ def _identity() -> tuple[str, str]:
         return "Ava", ""
 
 
+def _diario(testo: str, strumenti: list[str], origine: str) -> None:
+    """Riga nel diario delle richieste (data/diario.jsonl): base per l'apprendimento delle abitudini."""
+    try:
+        import json as _j
+        from avatar.settings import DATA_DIR as _D
+        _D.mkdir(parents=True, exist_ok=True)
+        with open(_D / "diario.jsonl", "a", encoding="utf-8") as f:
+            f.write(_j.dumps({"ts": time.strftime("%Y-%m-%d %H:%M"), "testo": testo[:300], "strumenti": strumenti[:8], "origine": origine}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 class Assistant:
     def __init__(self, ui, settings: Settings) -> None:
         self.ui = ui
@@ -335,10 +347,16 @@ class Assistant:
             self.ui.set_state("THINKING")
             splitter = SentenceSplitter()
 
+            used: list[str] = []
+
             def emit(ev: dict) -> None:
                 if turn != self._turn:
                     return
                 t = ev.get("type")
+                if t == "status" and ev.get("status") == "working" and ev.get("detail"):
+                    used.append(str(ev["detail"]))
+                if t in ("done", "error"):
+                    _diario(text, used, getattr(self, "_origin", "local"))
                 if t == "status":
                     label = STATUS_LABELS.get(ev["status"], "THINKING")
                     detail = str(ev.get("detail") or "").strip()

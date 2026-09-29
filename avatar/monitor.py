@@ -73,6 +73,16 @@ class Monitor:
                         self.ui.write_log(f"SYS: Umore stimato: {r['tono']} ({r.get('nota', '')[:80]})")
                 except Exception as err:
                     print(f"[umore] {err}")
+            if self.settings.get("abitudini_enabled", True):
+                try:
+                    import sys as _s; _s.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugins"))
+                    import importlib
+                    ab = importlib.import_module("abitudini")
+                    if ab.da_aggiornare():
+                        r = ab.aggiorna()
+                        self.ui.write_log(f"SYS: Abitudini aggiornate: {len(r)} voci.")
+                except Exception as err:
+                    print(f"[abitudini] {err}")
             self._stop.wait(int(self.settings.get("monitor_intervallo") or 60))
 
     # ── raccolta ─────────────────────────────────────────────────────────

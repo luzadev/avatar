@@ -54,6 +54,7 @@ DEFAULTS: dict[str, Any] = {
     "homeassistant_url": "http://homeassistant.local:8123",   # Home Assistant (token nel portachiavi)
     "immagini_famiglia": "z-image-turbo",   # z-image-turbo | schnell | dev | qwen (comando mflux e passi predefiniti)
     "immagini_modello": "",                 # repo Hugging Face o cartella; vuoto = predefinito della famiglia
+    "abitudini_enabled": True,              # distillazione settimanale delle abitudini nella memoria
     "umore_enabled": False,                 # stima oraria dell'umore dai messaggi scritti dall'utente
     "io_nomi": "Luciano",                   # come compare l'utente come mittente nelle chat esportate
     "remote_enabled": True,                 # app web per il telefono (HTTPS sulla rete locale)
