@@ -4691,8 +4691,9 @@ class MainWindow(QMainWindow):
                         '<plist version="1.0"><dict>\n'
                         '  <key>Label</key><string>it.luza.assistente</string>\n'
                         '  <key>ProgramArguments</key><array>\n'
-                        f'    <string>{sys.executable}</string>\n'
-                        f'    <string>{script}</string>\n'
+                        + ('    <string>/usr/bin/open</string>\n    <string>-a</string>\n    <string>/Applications/LuZa.app</string>\n'
+                           if Path("/Applications/LuZa.app").exists() else
+                           f'    <string>{sys.executable}</string>\n    <string>{script}</string>\n') +
                         '  </array>\n'
                         '  <key>RunAtLoad</key><true/>\n'
                         '</dict></plist>\n'

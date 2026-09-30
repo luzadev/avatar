@@ -271,6 +271,9 @@ def _query() -> dict[str, list[str]]:
             apis = []
 
         preferred = _PREFERRED_APIS.get(platform.system(), ())
+        # Su macOS Core Audio non mente: aprire un flusso di prova su ogni dispositivo (Bluetooth, AirPlay, schermi)
+        # costa secondi ciascuno e blocca l'interfaccia. Le prove servono solo per le API fasulle di Windows/Linux.
+        fast = platform.system() == "Darwin"
 
         def _collect(api_filter, kind) -> list[tuple[int, str]]:
             """(index, name) for named, non-pseudo devices on one side that can
@@ -287,7 +290,7 @@ def _query() -> dict[str, list[str]]:
                     api = apis[dev["hostapi"]].lower() if dev.get("hostapi", -1) < len(apis) else ""
                     if api_filter not in api:
                         continue
-                if not _usable(idx, kind):
+                if not fast and not _usable(idx, kind):
                     continue
                 seen.add(name)
                 found.append((idx, name))
@@ -303,7 +306,7 @@ def _query() -> dict[str, list[str]]:
                 if not found:
                     continue
                 # One probe per API per direction, cached, on this thread.
-                if not _transport_works(found[0][0], kind, (api_filter, kind)):
+                if not fast and not _transport_works(found[0][0], kind, (api_filter, kind)):
                     continue
                 _chosen_api[kind] = api_filter
                 out[kind] = [_display_name(n, devices) for _i, n in found]

@@ -175,11 +175,11 @@ class RemoteServer:
         runner = web.AppRunner(app)
         self._loop.run_until_complete(runner.setup())
         try:
-            self._loop.run_until_complete(web.TCPSite(runner, "0.0.0.0", HTTPS_PORT, ssl_context=ctx).start())
-            self._loop.run_until_complete(web.TCPSite(runner, "0.0.0.0", HTTP_PORT).start())   # solo CA e reindirizzo
+            self._loop.run_until_complete(web.TCPSite(runner, "0.0.0.0", HTTPS_PORT, ssl_context=ctx, reuse_address=True).start())
+            self._loop.run_until_complete(web.TCPSite(runner, "0.0.0.0", HTTP_PORT, reuse_address=True).start())   # solo CA e reindirizzo
         except Exception as err:
             self.error = str(err)
-            self.log(f"ERR: Accesso remoto — porta occupata? {err}")
+            self.log(f"ERR: Accesso remoto non avviato: porta {HTTPS_PORT} occupata (c'è un'altra LuZa aperta?). {err}")
             return
         self.log(f"SYS: Accesso remoto pronto su https://{self.ip}:{HTTPS_PORT} (CA: http://{self.ip}:{HTTP_PORT}/ca.crt)")
         try:

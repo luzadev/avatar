@@ -33,7 +33,30 @@ def ensure_identity_file() -> None:
         f.write_text(json.dumps(data, indent=4, ensure_ascii=False), encoding="utf-8")
 
 
+def _single_instance() -> bool:
+    """Blocco esclusivo su data/luza.lock: una seconda LuZa (avvio automatico + avvio manuale) esce subito."""
+    import fcntl
+    from avatar.settings import DATA_DIR
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    global _lock_file
+    _lock_file = open(DATA_DIR / "luza.lock", "w")
+    try:
+        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_file.write(str(__import__("os").getpid())); _lock_file.flush()
+        return True
+    except OSError:
+        return False
+
+
 def main() -> None:
+    if "--smoke" not in sys.argv and not _single_instance():
+        print("LuZa è già in esecuzione: questa seconda istanza si chiude.")
+        try:
+            import subprocess
+            subprocess.run(["osascript", "-e", 'display notification "LuZa è già aperta." with title "LuZa"'], timeout=5)
+        except Exception:
+            pass
+        return
     ensure_identity_file()
     settings = Settings()
     try:
@@ -57,6 +80,11 @@ def main() -> None:
     ui.on_wake_toggle = assistant.on_wake_toggle
     ui.on_wake_manual = assistant.on_wake_manual
     ui.wake_get_state = assistant.wake_get_state
+    try:
+        from core import audio_devices
+        audio_devices.prefetch()   # elenco dispositivi audio pronto prima che si apra la finestra
+    except Exception:
+        pass
     from avatar.plugins import registry
     from core import confirm
     confirm.bind(ui.show_confirm, ui.hide_confirm, ui.write_log)
