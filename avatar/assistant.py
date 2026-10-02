@@ -118,6 +118,9 @@ class Assistant:
         for ts, chat, sender, text in rows:
             who = chat if sender == chat else f"{sender} nel gruppo {chat}"
             self.ui.write_log(f"WhatsApp: {who}: {text[:200]}")
+            if sender == chat:   # sul pannello LED solo le chat private, i gruppi sarebbero troppi
+                from avatar.monitor import _panel_notify
+                _panel_notify(f"WA {chat}: {text[:80]}")
             if self.settings.get("whatsapp_annuncia") and not self._busy and not self._speaking:
                 self.say(f"Messaggio WhatsApp da {who}: {text[:220]}")
 
@@ -148,6 +151,8 @@ class Assistant:
                     else:
                         self.ui.write_log(f"SYS: Timer: {testo}")
                         self.say(f"Promemoria: {testo}")
+                        from avatar.monitor import _panel_notify
+                        _panel_notify(f"Promemoria: {testo}", alert=True)
             except Exception as err:
                 print(f"[scheduler] {err}")
 

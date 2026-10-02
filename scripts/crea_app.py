@@ -140,6 +140,7 @@ exec "{python}" main.py >> "$HOME/Library/Logs/{APP_NAME}.log" 2>&1
         "NSContactsUsageDescription": "Per trovare numeri ed email dei contatti.",
         "NSAppleEventsUsageDescription": "Per controllare Mail, Note, Musica, Messaggi e le altre app.",
         "NSSpeechRecognitionUsageDescription": "Per il riconoscimento vocale.",
+        "NSBluetoothAlwaysUsageDescription": "Per comandare il pannello LED iPIXEL.",
     }
     with open(app / "Contents" / "Info.plist", "wb") as f:
         plistlib.dump(info, f)

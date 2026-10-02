@@ -104,8 +104,17 @@ def main() -> None:
     assistant.remote = remote
     _set_state, _write_log, _show_confirm, _hide_confirm = ui.set_state, ui.write_log, ui.show_confirm, ui.hide_confirm
 
+    from avatar import ipixel
+    ipixel.panel = ipixel.IPixel(settings, ui.write_log)
+    ipixel.panel.start()
+    ui._app.aboutToQuit.connect(ipixel.panel.stop)
+
     def set_state(state: str) -> None:
         _set_state(state); remote.on_state(state)
+        try:
+            ipixel.panel.on_state(state)
+        except Exception:
+            pass
 
     def write_log(text: str) -> None:
         _write_log(text); remote.on_log(text)

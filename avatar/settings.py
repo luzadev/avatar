@@ -57,6 +57,13 @@ DEFAULTS: dict[str, Any] = {
     "abitudini_enabled": True,              # distillazione settimanale delle abitudini nella memoria
     "umore_enabled": False,                 # stima oraria dell'umore dai messaggi scritti dall'utente
     "io_nomi": "Luciano",                   # come compare l'utente come mittente nelle chat esportate
+    "ipixel_enabled": False,                # pannello LED iPIXEL via Bluetooth
+    "ipixel_address": "",                   # identificativo BLE (rilevato da solo)
+    "ipixel_luminosita": 40,
+    "ipixel_stati": True,                   # mostra lo stato di LuZa (penso, token, strumenti) mentre lavora
+    "ipixel_notifiche": True,               # mostra avvisi e messaggi in arrivo
+    "ipixel_orologio_stile": 1,
+    "ipixel_intermezzi_min": 15,            # ogni quanti minuti una frase o animazione (0 = mai); non di notte
     "remote_enabled": True,                 # app web per il telefono (HTTPS sulla rete locale)
     "remote_token": "",                     # chiave di abbinamento (generata al primo avvio)
 }

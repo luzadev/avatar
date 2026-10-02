@@ -24,6 +24,17 @@ KEYWORDS = re.compile(r"\?|urgent|aiut|assistenz|problem|non funziona|non riesco
 _lock = threading.Lock()
 
 
+def _panel_notify(text: str, alert: bool = False) -> None:
+    """Notifica sul pannello LED iPIXEL, se attivo e abilitato."""
+    try:
+        from avatar import ipixel
+        p = ipixel.panel
+        if p is not None and p.settings.get("ipixel_enabled") and p.settings.get("ipixel_notifiche", True):
+            p.show_text(text, ipixel.COLORI["ALERT"] if alert else ipixel.COLORI["INFO"], 14 if alert else 10, icon=ipixel.COLORI["ALERT"] if alert else None)
+    except Exception as err:
+        print(f"[ipixel] {err}")
+
+
 class Monitor:
     def __init__(self, ui, say, settings: Settings) -> None:
         self.ui, self.say, self.settings = ui, say, settings
@@ -252,6 +263,7 @@ class Monitor:
     def _notify(self, a: dict) -> None:
         riga = f"{a['fonte']} · {a['chi']}: {a['motivo']}"
         self.ui.write_log(f"ERR: ATTENZIONE — {riga}")
+        _panel_notify(f"{a['fonte']} {a['chi']}: {a['motivo']}", alert=True)
         try:
             title = "Ava: richiede attenzione" if a["priorita"] != "alta" else "Ava: URGENTE"
             safe = lambda s: s.replace('"', "'").replace("\\", "")

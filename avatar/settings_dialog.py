@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
-                             QPushButton, QScrollArea, QStackedWidget, QTabWidget, QVBoxLayout, QWidget, QDoubleSpinBox)
+                             QPushButton, QScrollArea, QStackedWidget, QTabWidget, QVBoxLayout, QWidget, QDoubleSpinBox, QSpinBox)
 
 from .engines.claude_code import check_claude_code
 from .engines.openai_compat import list_models
@@ -273,6 +273,26 @@ class SettingsDialog(QDialog):
         form_ha.addRow("Token", row)
         self.ha_hint = QLabel(""); self.ha_hint.setWordWrap(True); form_ha.addRow("", self.ha_hint)
         add(pg_casa, form_ha)
+
+        # ── Pannello LED iPIXEL ───────────────────────────────────────────
+        form_px = QFormLayout()
+        form_px.addRow(_note("Pannello LED iPIXEL via Bluetooth: a riposo mostra l'orologio, mentre LuZa lavora lo stato (penso, token al secondo, strumento in uso), e gli avvisi in arrivo."))
+        row = QHBoxLayout()
+        self.px_on = QCheckBox("Attivo"); self.px_on.setChecked(bool(s.get("ipixel_enabled"))); row.addWidget(self.px_on)
+        self.px_stati = QCheckBox("Stato di LuZa"); self.px_stati.setChecked(bool(s.get("ipixel_stati", True))); row.addWidget(self.px_stati)
+        self.px_notif = QCheckBox("Notifiche"); self.px_notif.setChecked(bool(s.get("ipixel_notifiche", True))); row.addWidget(self.px_notif)
+        row.addStretch(); form_px.addRow("Pannello", row)
+        self.px_lum = QSpinBox(); self.px_lum.setRange(1, 100); self.px_lum.setValue(int(s.get("ipixel_luminosita") or 40))
+        form_px.addRow("Luminosità", self.px_lum)
+        self.px_fun = _combo([(0, "mai"), (5, "ogni 5 minuti"), (15, "ogni 15 minuti"), (30, "ogni 30 minuti"), (60, "ogni ora")], int(s.get("ipixel_intermezzi_min") if s.get("ipixel_intermezzi_min") is not None else 15))
+        form_px.addRow("Frasi e animazioni", self.px_fun)
+        try:
+            from . import ipixel as _px
+            st = "non attivo" if _px.panel is None else (f"collegato ({_px.panel.size[0]}×{_px.panel.size[1]})" if _px.panel.connected else (_px.panel.error or "in collegamento…"))
+        except Exception:
+            st = "?"
+        form_px.addRow("Stato", QLabel(st))
+        add(pg_casa, form_px)
 
         # ── Strumenti (server MCP esterni) ────────────────────────────────
         from PyQt6.QtWidgets import QPlainTextEdit
@@ -594,6 +614,8 @@ class SettingsDialog(QDialog):
             "server_assist_dir": self.srv_dir.text().strip() or "/opt/aiserverassistance",
             "server_assist_bot": self.srv_bot.text().strip().lstrip("@") or "luzaserver_bot",
             "homeassistant_url": self.ha_url.text().strip().rstrip("/"),
+            "ipixel_enabled": self.px_on.isChecked(), "ipixel_stati": self.px_stati.isChecked(), "ipixel_notifiche": self.px_notif.isChecked(),
+            "ipixel_luminosita": int(self.px_lum.value()), "ipixel_intermezzi_min": int(self.px_fun.currentData() or 0),
             "immagini_famiglia": self.img_fam.currentData() or "z-image-turbo", "immagini_modello": self.img_model.currentText().strip(),
         }
         if self.ha_token.text().strip():
