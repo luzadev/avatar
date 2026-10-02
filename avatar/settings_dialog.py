@@ -286,6 +286,8 @@ class SettingsDialog(QDialog):
         form_px.addRow("Luminosità", self.px_lum)
         self.px_fun = _combo([(0, "mai"), (5, "ogni 5 minuti"), (15, "ogni 15 minuti"), (30, "ogni 30 minuti"), (60, "ogni ora")], int(s.get("ipixel_intermezzi_min") if s.get("ipixel_intermezzi_min") is not None else 15))
         form_px.addRow("Frasi e animazioni", self.px_fun)
+        self.px_mus = QCheckBox("Titolo del brano Spotify a ogni cambio"); self.px_mus.setChecked(bool(s.get("ipixel_musica", True)))
+        form_px.addRow("Musica", self.px_mus)
         try:
             from . import ipixel as _px
             st = "non attivo" if _px.panel is None else (f"collegato ({_px.panel.size[0]}×{_px.panel.size[1]})" if _px.panel.connected else (_px.panel.error or "in collegamento…"))
@@ -333,6 +335,16 @@ class SettingsDialog(QDialog):
         self.img_model.lineEdit().setPlaceholderText("vuoto = predefinito della famiglia; un nome nuovo viene scaricato al primo uso")
         form_img.addRow("Modello (elenco: già scaricati)", self.img_model)
         add(pg_tool, form_img)
+
+        # ── Spotify ───────────────────────────────────────────────────────
+        form_sp = QFormLayout()
+        form_sp.addRow(_note("Spotify: per cercare e far partire i brani a voce servono le chiavi gratuite di developer.spotify.com (Dashboard → Create app, nessun login richiesto). Senza chiavi LuZa apre la ricerca nell'app."))
+        self.sp_id = QLineEdit(str(s.get("spotify_client_id") or "")); self.sp_id.setPlaceholderText("Client ID")
+        form_sp.addRow("Client ID", self.sp_id)
+        self.sp_sec = QLineEdit(); self.sp_sec.setEchoMode(QLineEdit.EchoMode.Password)
+        self.sp_sec.setPlaceholderText("•••••• (salvato)" if s.get_secret("spotify_client_secret") else "Client secret")
+        form_sp.addRow("Client secret", self.sp_sec)
+        add(pg_tool, form_sp)
 
         btns = QHBoxLayout(); btns.addStretch()
         cancel = QPushButton("Annulla"); cancel.clicked.connect(self.reject); btns.addWidget(cancel)
@@ -503,6 +515,8 @@ class SettingsDialog(QDialog):
 
     def _ha_check(self) -> None:
         vals = {"homeassistant_url": self.ha_url.text().strip().rstrip("/")}
+        if self.sp_sec.text().strip():
+            values["spotify_client_secret"] = self.sp_sec.text().strip()
         if self.ha_token.text().strip():
             vals["homeassistant_token"] = self.ha_token.text().strip()
         self.settings.update(vals)
@@ -615,7 +629,8 @@ class SettingsDialog(QDialog):
             "server_assist_bot": self.srv_bot.text().strip().lstrip("@") or "luzaserver_bot",
             "homeassistant_url": self.ha_url.text().strip().rstrip("/"),
             "ipixel_enabled": self.px_on.isChecked(), "ipixel_stati": self.px_stati.isChecked(), "ipixel_notifiche": self.px_notif.isChecked(),
-            "ipixel_luminosita": int(self.px_lum.value()), "ipixel_intermezzi_min": int(self.px_fun.currentData() or 0),
+            "ipixel_luminosita": int(self.px_lum.value()), "ipixel_intermezzi_min": int(self.px_fun.currentData() or 0), "ipixel_musica": self.px_mus.isChecked(),
+            "spotify_client_id": self.sp_id.text().strip(),
             "immagini_famiglia": self.img_fam.currentData() or "z-image-turbo", "immagini_modello": self.img_model.currentText().strip(),
         }
         if self.ha_token.text().strip():

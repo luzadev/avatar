@@ -78,7 +78,47 @@ def animazione(params: dict, ctx: dict) -> str:
     return f"Sul pannello: «{val}»."
 
 
+def demo(params: dict, ctx: dict) -> str:
+    """Sequenza dimostrativa sul pannello, in background (circa 90 secondi)."""
+    import threading, time
+    from avatar import ipixel_fun as fun
+
+    def run():
+        p = _p()
+        steps = [
+            ("stato", "THINKING · penso", 4), ("stato", "THINKING · genero la risposta · 42 token · 38/s", 3),
+            ("stato", "THINKING · genero la risposta · 187 token · 51/s", 3), ("stato", "PROCESSING · strumento: meteo", 4),
+            ("stato", "SPEAKING", 4), ("stato", "LISTENING", 3),
+            ("testo", "WA Valentina: amo stasera ceniamo fuori?", 10), ("allarme", "Server i5: disco al 91%", 9),
+            ("anim", "plasma", 7), ("anim", "pacman", 7), ("anim", "cuore", 6), ("anim", "matrix", 6),
+            ("testo", "Più bpm, meno stress", 8), ("musica", "", 22), ("fine", "", 0),
+        ]
+        for kind, val, dur in steps:
+            if kind == "stato":
+                p.on_state(val)
+            elif kind in ("testo", "allarme"):
+                p.show_text(val, ipixel.COLORI["ALERT"] if kind == "allarme" else None, dur, icon=ipixel.COLORI["ALERT"] if kind == "allarme" else None)
+            elif kind == "anim":
+                data = fun.ANIMAZIONI[val](p.size)
+                with p._lock:
+                    p._want = (f"demo:{val}:{time.time()}", data, True); p._notify_until = time.time() + dur
+                p._shown_key = None; p._poke()
+            elif kind == "musica":
+                p.on_state("LISTENING")
+                with p._lock:
+                    p._notify_until = 0; p._want = None
+                p.set_background("demo:music", ipixel.render_music("Bohemian Rhapsody", "Queen", 61, 354, p.size, dur), True, dur)
+            elif kind == "fine":
+                p.clear_background(); p.clock()
+            time.sleep(dur)
+
+    threading.Thread(target=run, daemon=True, name="ipixel-demo").start()
+    return "Demo avviata sul pannello: stati di LuZa, notifiche, animazioni e schermata musica, circa un minuto e mezzo."
+
+
 TOOLS = [
+    {"name": "ipixel_demo", "description": "Mostra una demo sul pannello LED: stati di LuZa e token, notifiche, animazioni, schermata musica.",
+     "parameters": {"type": "object", "properties": {}}, "run": demo},
     {"name": "ipixel_animazione", "description": "Mostra un'animazione sul pannello LED: plasma, matrix, stelle, cuore, equalizzatore, pacman; senza nome una sorpresa a caso (frase spiritosa, info o animazione).",
      "parameters": {"type": "object", "properties": {"nome": {"type": "string"}, "secondi": {"type": "number"}}}, "run": animazione},
     {"name": "ipixel_scrivi", "description": "Scrive un testo sul pannello LED iPIXEL (scorre se è lungo) per alcuni secondi, poi torna all'orologio. colore: rosso, verde, blu, azzurro, giallo, arancione, viola, rosa, bianco, ciano.",

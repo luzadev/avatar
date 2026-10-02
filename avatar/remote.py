@@ -157,6 +157,7 @@ class RemoteServer:
         app.router.add_get("/events", self._events)
         app.router.add_get("/poll", self._poll_handler)
         app.router.add_post("/cmd", self._cmd)
+        app.router.add_post("/tool", self._tool)
         app.router.add_post("/stt", self._stt)
         app.router.add_get("/img", self._img)
         app.router.add_get("/ca.crt", self._ca)
@@ -380,6 +381,19 @@ class RemoteServer:
         elif t == "confirm":
             from core import confirm
             confirm.resolve(bool(d.get("ok")))
+
+    async def _tool(self, request):
+        """Esecuzione di uno strumento dentro l'app per conto del server MCP di Claude Code (solo da questo Mac)."""
+        from aiohttp import web
+        if request.remote not in ("127.0.0.1", "::1") or not self._authed(request):
+            raise web.HTTPForbidden()
+        d = await request.json()
+        from avatar.plugins import registry
+        name, args = str(d.get("name", "")), d.get("arguments") or {}
+        if not registry.has(name):
+            return web.json_response({"found": False})
+        res = await asyncio.get_event_loop().run_in_executor(None, registry.run, name, args)
+        return web.json_response({"found": True, "result": res})
 
     async def _cmd(self, request):
         from aiohttp import web

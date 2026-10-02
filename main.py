@@ -108,6 +108,8 @@ def main() -> None:
     ipixel.panel = ipixel.IPixel(settings, ui.write_log)
     ipixel.panel.start()
     ui._app.aboutToQuit.connect(ipixel.panel.stop)
+    import threading as _th
+    _th.Thread(target=registry.load, daemon=True, name="plugins-load").start()   # avvia i servizi dei plugin (es. Spotify sul pannello)
 
     def set_state(state: str) -> None:
         _set_state(state); remote.on_state(state)

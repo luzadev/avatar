@@ -19,9 +19,8 @@ FRASI = [
 
 
 def _gif(frames: list[Image.Image], ms: int = 60) -> bytes:
-    buf = io.BytesIO()
-    frames[0].save(buf, "GIF", save_all=True, append_images=frames[1:], duration=ms, loop=0, disposal=1, optimize=False)
-    return buf.getvalue()
+    from avatar.ipixel import _save_gif
+    return _save_gif(frames, ms)
 
 
 def plasma(size, n=14) -> bytes:

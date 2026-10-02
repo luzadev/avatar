@@ -27,7 +27,10 @@ COLORI = {"LISTENING": (0, 255, 120), "THINKING": (255, 190, 0), "PROCESSING": (
           "SLEEPING": (40, 120, 140), "MUTED": (255, 40, 90), "INFO": (0, 200, 255), "ALERT": (255, 40, 60)}
 NOMI_COLORI = {"rosso": (255, 30, 30), "verde": (0, 230, 80), "blu": (40, 90, 255), "azzurro": (0, 200, 255), "giallo": (255, 210, 0),
                "arancione": (255, 120, 0), "viola": (170, 60, 255), "rosa": (255, 80, 170), "bianco": (255, 255, 255), "ciano": (0, 255, 230)}
-FONT_PATHS = ("/System/Library/Fonts/Menlo.ttc", "/System/Library/Fonts/Supplemental/Arial Bold.ttf")
+from pathlib import Path as _P
+PIXEL_FONT = _P(__file__).resolve().parent.parent / "assets" / "fonts" / "Silkscreen-Regular.ttf"   # OFL, font pixel per LED
+FONT_PATHS = (str(PIXEL_FONT), "/System/Library/Fonts/Menlo.ttc")
+SCROLL_MS = 70          # ms per pixel di scorrimento (circa 14 pixel al secondo)
 
 
 def _font(size: int):
@@ -39,45 +42,141 @@ def _font(size: int):
     return ImageFont.load_default()
 
 
-def packets(data: bytes, slot: int = 1, gif: bool = False) -> list[bytes]:
+def windows(data: bytes, slot: int = 1, gif: bool = False, win: int = 12288) -> list[bytes]:
+    """Finestre da 12 KB, ognuna con l'intestazione completa: [len][tipo 2=PNG 3=GIF][opt 0=prima 2=seguenti]
+    [lunghezza totale][crc32 totale][0][slot] + dati. Tra una finestra e l'altra il pannello manda una conferma."""
     typ = 3 if gif else 2
-    hdr = struct.pack("<HHBII", (15 + len(data)) & 0xFFFF, typ, 0, len(data), zlib.crc32(data) & 0xFFFFFFFF) + bytes([0, slot & 0xFF])
-    full = hdr + data
-    out, off, wi = [], 0, 0
-    while off < len(full):
-        win = full[off:off + 12288]
-        if wi:
-            win = struct.pack("<HHB", (len(win) + 5) & 0xFFFF, typ, 2) + win
-        out += [win[i:i + 244] for i in range(0, len(win), 244)]
-        off += 12288; wi += 1
+    crc = zlib.crc32(data) & 0xFFFFFFFF
+    out = []
+    for wi, off in enumerate(range(0, len(data), win)):
+        chunk = data[off:off + win]
+        out.append(struct.pack("<HHBII", (15 + len(chunk)) & 0xFFFF, typ, 0 if wi == 0 else 2, len(data), crc) + bytes([0, slot & 0xFF]) + chunk)
     return out
 
 
-def render_text(text: str, color=(0, 200, 255), size=(64, 16), icon_color=None, bold: bool = True) -> tuple[bytes, bool]:
-    """Testo su un pannello: statico se entra, altrimenti GIF scorrevole. Restituisce (dati, è_gif)."""
+def packets(data: bytes, slot: int = 1, gif: bool = False) -> list[bytes]:
+    return [w[i:i + 244] for w in windows(data, slot, gif) for i in range(0, len(w), 244)]
+
+
+def _single_gif_parts(img) -> tuple[bytes, bytes]:
+    """(tavolozza, blocco immagine) di un fotogramma salvato da solo come GIF a schermo intero, non interlacciato."""
+    buf = io.BytesIO(); img.save(buf, "GIF", optimize=False, interlace=False)
+    b = buf.getvalue()
+    flags = b[10]
+    gct_len = 3 * (2 ** ((flags & 7) + 1)) if flags & 0x80 else 0
+    gct = b[13:13 + gct_len]
+    i = 13 + gct_len
+    while b[i] == 0x21:                      # salta le estensioni
+        i += 2
+        while b[i]:
+            i += b[i] + 1
+        i += 1
+    assert b[i] == 0x2C
+    return gct, b[i:-1]                       # descrittore immagine + dati LZW (senza il terminatore 0x3B)
+
+
+def _save_gif(frames: list, ms: int) -> bytes:
+    """GIF con ogni fotogramma a schermo intero e tavolozza locale: niente ritagli né trasparenze, che il pannello
+    disegnerebbe fuori posto (i 'pixel sparsi')."""
+    w, h = frames[0].size
+    out = bytearray(b"GIF89a" + struct.pack("<HHBBB", w, h, 0, 0, 0))
+    out += b"\x21\xFF\x0BNETSCAPE2.0\x03\x01\x00\x00\x00"          # ripetizione infinita
+    delay = max(2, round(ms / 10))
+    for f in frames:
+        pimg = f.convert("RGB").quantize(colors=16, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+        gct, block = _single_gif_parts(pimg)
+        n = max(1, (len(gct) // 3).bit_length() - 1)
+        size_bits = max(0, n - 1)
+        lct = gct.ljust(3 * (2 ** (size_bits + 1)), b"\x00")
+        out += b"\x21\xF9\x04" + bytes([1 << 2]) + struct.pack("<H", delay) + b"\x00\x00"   # GCE: disposal 1, nessuna trasparenza
+        desc = bytearray(block[:10])
+        desc[9] = 0x80 | size_bits                                            # tavolozza locale, non interlacciato
+        out += bytes(desc) + lct + block[10:]
+    out += b"\x3B"
+    return bytes(out)
+
+
+def _ink_rows(font, text="AQgj") -> tuple[int, int]:
+    d = ImageDraw.Draw(Image.new("1", (1, 1)))
+    b = d.textbbox((0, 0), "AHMQ", font=font)
+    return b[1], b[3]
+
+
+def render_text(text: str, color=(0, 200, 255), size=(64, 16), icon_color=None, bold: bool = False) -> tuple[bytes, bool]:
+    """Testo su una riga con font pixel: statico se entra, altrimenti GIF che scorre lentamente. (dati, è_gif)."""
     w, h = size
-    font = _font(11 if h <= 16 else 14)
+    font = _font(16 if h >= 16 else 8)
     pad = 6 if icon_color else 0
     meas = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     tw = int(meas.textlength(text, font=font))
-    bbox = meas.textbbox((0, 0), text, font=font)
-    ty = (h - (bbox[3] - bbox[1])) // 2 - bbox[1]
+    top, bot = _ink_rows(font)
+    ty = (h - (bot - top)) // 2 - top
 
     def frame(x: int) -> Image.Image:
         im = Image.new("RGB", (w, h), (0, 0, 0)); d = ImageDraw.Draw(im); d.fontmode = "1"
         d.text((x, ty), text, fill=color, font=font)
-        if bold:
-            d.text((x + 1, ty), text, fill=color, font=font)
         if icon_color:
             d.rectangle([0, 0, pad - 2, h - 1], fill=(0, 0, 0)); d.ellipse([0, h // 2 - 2, 4, h // 2 + 2], fill=icon_color)
         return im
 
     if tw + pad <= w:
         buf = io.BytesIO(); frame(pad + (w - pad - tw) // 2).save(buf, "PNG"); return buf.getvalue(), False
-    frames = [frame(x) for x in range(w, -tw - 2, -2)]
-    buf = io.BytesIO()
-    frames[0].save(buf, "GIF", save_all=True, append_images=frames[1:], duration=45, loop=0, disposal=1, optimize=False)
-    return buf.getvalue(), True
+    frames = [frame(x) for x in range(w, -tw - 1, -1)]
+    return _save_gif(frames, SCROLL_MS), True
+
+
+def _fmt_time(sec: float) -> str:
+    sec = max(0, int(sec)); return f"{sec // 60}:{sec % 60:02d}"
+
+
+def _big_frames(text: str, color, size, min_frames: int = 0) -> list:
+    """Fotogrammi di una riga in caratteri grandi: ferma se entra, altrimenti scorre una volta da destra a sinistra."""
+    w, h = size
+    font = _font(16 if h >= 16 else 8)
+    top, bot = _ink_rows(font)
+    ty = (h - (bot - top)) // 2 - top
+    tw = int(ImageDraw.Draw(Image.new("RGB", (1, 1))).textlength(text, font=font))
+
+    def frame(x: int):
+        im = Image.new("RGB", (w, h), (0, 0, 0)); d = ImageDraw.Draw(im); d.fontmode = "1"; d.text((x, ty), text, fill=color, font=font); return im
+
+    if tw <= w:
+        return [frame((w - tw) // 2)] * max(min_frames, int(2500 / SCROLL_MS))
+    xs = [0] * int(700 / SCROLL_MS) + list(range(0, -(tw - w) - 1, -1)) + [-(tw - w)] * int(700 / SCROLL_MS)
+    return [frame(x) for x in xs]
+
+
+def render_music(titolo: str, artista: str, posizione: float, durata: float, size=(64, 16), secondi: float = 20) -> bytes:
+    """Ciclo musica (GIF): titolo in grande, autore in grande, poi schermata con autore e tempo che manca e barra
+    di avanzamento, ripetuti fino a coprire `secondi`."""
+    w, h = size
+    green, white = (30, 215, 96), (230, 230, 230)
+    font = _font(8)
+    top, _bot = _ink_rows(font)
+    y1, y2 = -top + 1, -top + 8
+    meas = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    total = max(1, int(min(secondi, max(1.0, durata - posizione)) * 1000 / SCROLL_MS))
+    big_t = _big_frames(titolo, green, size)
+    big_a = _big_frames(artista, white, size)
+    frames = []
+    while len(frames) < total:
+        frames += big_t + big_a
+        start = len(frames)
+        for k in range(int(4000 / SCROLL_MS)):         # 4 s di riepilogo con il tempo che scorre
+            i = start + k
+            el = i * SCROLL_MS / 1000.0
+            im = Image.new("RGB", (w, h), (0, 0, 0)); d = ImageDraw.Draw(im); d.fontmode = "1"
+            t_w = int(meas.textlength(titolo, font=font))
+            d.text(((w - t_w) // 2 if t_w <= w else 0, y1), titolo, fill=green, font=font)
+            rem = "-" + _fmt_time(durata - posizione - el)
+            rw = int(meas.textlength(rem, font=font))
+            art = Image.new("RGB", (w - rw - 2, 8), (0, 0, 0)); da = ImageDraw.Draw(art); da.fontmode = "1"
+            da.text((0, y2 - 7), artista, fill=white, font=font); im.paste(art, (0, 7))
+            d.text((w - rw, y2), rem, fill=white, font=font)
+            frac = min(1.0, (posizione + el) / durata) if durata > 0 else 0
+            d.line([(0, h - 1), (w - 1, h - 1)], fill=(25, 25, 25)); d.line([(0, h - 1), (int((w - 1) * frac), h - 1)], fill=green)
+            frames.append(im)
+    return _save_gif(frames[:max(total, len(big_t) + len(big_a) + 20)], SCROLL_MS)
 
 
 def render_image(path: str, size=(64, 16)) -> bytes:
@@ -100,6 +199,7 @@ class IPixel:
         self._want: tuple | None = None       # (chiave, dati, gif) da mostrare
         self._shown_key = None
         self._state_key = None
+        self._background: tuple | None = None   # (chiave, dati, gif, scadenza): schermata di riposo al posto dell'orologio
         self._lock = threading.Lock()
         self._stop = False
 
@@ -133,6 +233,7 @@ class IPixel:
         c = BleakClient(dev, disconnected_callback=lambda _c: self._on_disconnect())
         await c.connect(timeout=15)
         notes: list[bytes] = []
+        self._notes = notes
         await c.start_notify(SVC_NOTIFY, lambda _h, d: notes.append(bytes(d)))
         await c.write_gatt_char(SVC_WRITE, bytes([8, 0, 1, 0x80, 0, 0, 0, 0]), response=False)
         await asyncio.sleep(0.8)
@@ -155,9 +256,17 @@ class IPixel:
             await self._client.write_gatt_char(SVC_WRITE, bytes(frame), response=False)
 
     async def _send(self, data: bytes, gif: bool) -> None:
-        for p in packets(data, 1, gif):
-            await self._client.write_gatt_char(SVC_WRITE, p, response=False)
-            await asyncio.sleep(0.015)
+        notes = getattr(self, "_notes", [])
+        for w in windows(data, 1, gif):
+            n0 = len(notes)
+            for i in range(0, len(w), 244):
+                await self._client.write_gatt_char(SVC_WRITE, w[i:i + 244], response=False)
+                await asyncio.sleep(0.015)
+            for _ in range(80):                     # conferma della finestra (max 8 s)
+                if len(notes) > n0:
+                    break
+                await asyncio.sleep(0.1)
+        del notes[:-20]
 
     async def _sync_clock(self) -> None:
         t = time.localtime()
@@ -190,6 +299,12 @@ class IPixel:
                     notify = time.time() < self._notify_until
                 if want and (notify or self._state_key) and want[0] != self._shown_key:
                     await self._send(want[1], want[2]); self._shown_key = want[0]
+                elif (not want or (not notify and not self._state_key)) and self._background and time.time() < self._background[3]:
+                    bg = self._background
+                    if self._shown_key != bg[0]:
+                        await self._send(bg[1], bg[2]); self._shown_key = bg[0]
+                        with self._lock:
+                            self._want = None
                 elif not want or (not notify and not self._state_key):
                     if self._shown_key == "clock" and self._intermezzo_due():
                         await self._intermezzo(); continue
@@ -209,6 +324,8 @@ class IPixel:
             self._wake.clear()
             try:
                 timeout = max(0.3, self._notify_until - time.time()) if time.time() < self._notify_until else 30
+                if self._background:
+                    timeout = min(timeout, max(0.5, self._background[3] - time.time()))
                 await asyncio.wait_for(self._wake.wait(), timeout=timeout)
             except asyncio.TimeoutError:
                 pass
@@ -289,6 +406,18 @@ class IPixel:
             self._state_key = key
             self._want = (key, data, gif)
         self._poke()
+
+    def set_background(self, key: str, data: bytes, gif: bool, durata: float) -> None:
+        with self._lock:
+            self._background = (key, data, gif, time.time() + durata)
+        self._poke()
+
+    def clear_background(self) -> None:
+        with self._lock:
+            had = self._background is not None
+            self._background = None
+        if had:
+            self._shown_key = None; self._poke()
 
     def run_cmd(self, frame: list[int]) -> None:
         if self._loop and self.connected:

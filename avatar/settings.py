@@ -63,12 +63,14 @@ DEFAULTS: dict[str, Any] = {
     "ipixel_stati": True,                   # mostra lo stato di LuZa (penso, token, strumenti) mentre lavora
     "ipixel_notifiche": True,               # mostra avvisi e messaggi in arrivo
     "ipixel_orologio_stile": 1,
+    "ipixel_musica": True,                  # titolo del brano Spotify sul pannello a ogni cambio
+    "spotify_client_id": "",
     "ipixel_intermezzi_min": 15,            # ogni quanti minuti una frase o animazione (0 = mai); non di notte
     "remote_enabled": True,                 # app web per il telefono (HTTPS sulla rete locale)
     "remote_token": "",                     # chiave di abbinamento (generata al primo avvio)
 }
 
-SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash", "elevenlabs_api_key", "homeassistant_token")
+SECRET_KEYS = ("anthropic_api_key", "local_api_key", "telegram_api_hash", "elevenlabs_api_key", "homeassistant_token", "spotify_client_secret")
 
 
 class Settings:

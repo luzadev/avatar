@@ -14,6 +14,27 @@ TOOLS = mcp_tools() + [{"name": "elenca_memorie", "description": "Elenca le memo
                         "inputSchema": {"type": "object", "properties": {}}}] + registry.mcp_tools()
 
 
+def run_in_app(name: str, args: dict) -> str | None:
+    """Se LuZa è aperta, esegue lo strumento dentro l'app (pannello LED, conferme a schermo, telefono, stato).
+    None se l'app non risponde: allora si esegue qui."""
+    import ssl
+    import urllib.request
+    try:
+        from avatar.settings import Settings
+        s = Settings()
+        if not s.get("remote_enabled", True):
+            return None
+        tok = str(s.get("remote_token") or "")
+        ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(f"https://127.0.0.1:8793/tool?k={tok}", data=json.dumps({"name": name, "arguments": args}).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=1800, context=ctx) as r:
+            d = json.loads(r.read())
+        return str(d["result"]) if d.get("found") else None
+    except Exception:
+        return None
+
+
 def send(msg: dict) -> None:
     sys.stdout.write(json.dumps(msg, ensure_ascii=False) + "\n")
     sys.stdout.flush()
@@ -50,7 +71,9 @@ def main() -> None:
                 if name == "elenca_memorie":
                     reply(text_result(memory_prompt()))
                 elif registry.has(name):
-                    res = registry.run(name, args)
+                    res = run_in_app(name, args)
+                    if res is None:
+                        res = registry.run(name, args)
                     reply(text_result(res, res.startswith("Errore")))
                 else:
                     res, _ = run_tool(name, args)
