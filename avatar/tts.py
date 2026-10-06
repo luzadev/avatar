@@ -374,12 +374,13 @@ class QwenVoice:
     """Qwen3-TTS dentro LuZa (mlx-audio), voce clonata da un campione + trascrizione. Modello e generazione girano
     sempre sullo stesso thread: MLX non condivide gli stream GPU tra thread."""
 
-    MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"
+    MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"     # 8 bit: ~1,7× più veloce del bf16, qualità quasi uguale
 
-    def __init__(self, ref_audio: str, ref_text: str, on_status=None) -> None:
+    def __init__(self, ref_audio: str, ref_text: str, on_status=None, model: str = "") -> None:
         from concurrent.futures import ThreadPoolExecutor
         self.ref_audio, self.ref_text = ref_audio, ref_text
-        self.voice = f"qwen:{ref_audio}"
+        self.model_name = model or self.MODEL
+        self.voice = f"qwen:{self.model_name}:{ref_audio}"
         self._on_status = on_status or (lambda m: None)
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qwen-tts")
         self._model = None
@@ -387,7 +388,7 @@ class QwenVoice:
     def _load(self) -> None:
         if self._model is None:
             from mlx_audio.tts.utils import load_model
-            self._model = load_model(self.MODEL)
+            self._model = load_model(self.model_name)
 
     def load(self) -> None:
         from pathlib import Path as _P
@@ -408,6 +409,32 @@ class QwenVoice:
     def synthesize(self, text: str) -> np.ndarray:
         return self._pool.submit(self._gen, clean_for_speech(text)).result()
 
+    def stream(self, text: str, cancel=None):
+        """Generatore di pezzi d'audio (~0,6 s) mentre la frase viene ancora generata: la voce parte dopo circa un secondo."""
+        import queue
+        q: queue.Queue = queue.Queue()
+
+        def work():
+            try:
+                self._load()
+                for r in self._model.generate(clean_for_speech(text), ref_audio=self.ref_audio, ref_text=self.ref_text,
+                                              lang_code="italian", stream=True, streaming_interval=0.6):
+                    if cancel is not None and cancel():
+                        break
+                    q.put(np.array(r.audio, dtype=np.float32))
+            except Exception as err:
+                q.put(err)
+            q.put(None)
+
+        self._pool.submit(work)
+        while True:
+            item = q.get()
+            if item is None:
+                return
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
 
 def make_voice(settings, on_status=None):
     if settings.get("tts_engine") == "qwen":
@@ -416,7 +443,8 @@ def make_voice(settings, on_status=None):
         if not ref.exists() and voices:
             ref = VOICES_DIR / f"{voices[0]}.wav"
         txt = ref.with_suffix(".txt")
-        return QwenVoice(str(ref), txt.read_text(encoding="utf-8") if txt.exists() else "", on_status=on_status)
+        return QwenVoice(str(ref), txt.read_text(encoding="utf-8") if txt.exists() else "", on_status=on_status,
+                         model=str(settings.get("qwen_modello") or ""))
     if settings.get("tts_engine") == "voicebox":
         return VoiceboxVoice(str(settings.get("voicebox_profile_id") or ""), str(settings.get("voicebox_engine") or "qwen"),
                              str(settings.get("voicebox_instruct") or ""), on_status=on_status)

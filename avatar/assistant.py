@@ -429,6 +429,23 @@ class Assistant:
             if item is END:
                 self._audio_q.put((turn, END, None))
                 continue
+            if hasattr(self.voice, "stream"):   # voce in streaming: i pezzi partono mentre la frase è ancora in generazione
+                try:
+                    first = True
+                    for chunk in self.voice.stream(item, cancel=lambda t=turn: t != self._turn):
+                        if turn != self._turn:
+                            break
+                        remote = getattr(self, "remote", None)
+                        if remote is not None and remote.has_clients():
+                            try:
+                                remote.on_audio(item if first else "", chunk)
+                            except Exception:
+                                pass
+                        self._audio_q.put((turn, item if first else "", chunk))
+                        first = False
+                except Exception as err:
+                    self.ui.write_log(f"ERR: Sintesi vocale — {err}")
+                continue
             try:
                 audio = self.voice.synthesize(item)
             except Exception as err:
