@@ -139,7 +139,7 @@ class SettingsDialog(QDialog):
         self.stack.setCurrentIndex(self.provider.currentIndex())
 
         form2 = QFormLayout()
-        self.tts_engine = _combo([("kokoro", "Kokoro, voce neurale in locale"), ("voicebox", "Voicebox: Qwen3-TTS in locale, espressiva, voce clonata"), ("elevenlabs", "ElevenLabs, espressiva nel cloud (chiave API)"), ("chatterbox", "Chatterbox, espressiva in locale (lenta)"), ("system", "Voce di sistema (macOS)")], s.get("tts_engine"))
+        self.tts_engine = _combo([("kokoro", "Kokoro, voce neurale in locale"), ("qwen", "Qwen3-TTS dentro LuZa: voce clonata, quasi in tempo reale"), ("voicebox", "Voicebox: Qwen3-TTS in locale, espressiva, voce clonata"), ("elevenlabs", "ElevenLabs, espressiva nel cloud (chiave API)"), ("chatterbox", "Chatterbox, espressiva in locale (lenta)"), ("system", "Voce di sistema (macOS)")], s.get("tts_engine"))
         form2.addRow("Motore voce", self.tts_engine)
         self.kokoro_voice = _combo(list(KOKORO_VOICES.items()), s.get("kokoro_voice")); form2.addRow("Voce Kokoro", self.kokoro_voice)
         self.system_voice = _combo([("", "Automatica (Alice)")] + [(v, v) for v in SystemVoice.list_voices()], s.get("system_voice"))

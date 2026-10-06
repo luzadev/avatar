@@ -281,7 +281,7 @@ class RemoteServer:
             "mlx_model": [(m, m.split("/")[-1]) for m in cached_models()],
             "mlx_thinking": [("auto", "Automatico"), ("off", "Spento"), ("on", "Acceso")],
             "claudecode_model": [("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")],
-            "tts_engine": [("kokoro", "Kokoro (locale, rapida)"), ("voicebox", "Voicebox (clonata)"), ("elevenlabs", "ElevenLabs"), ("chatterbox", "Chatterbox"), ("system", "Voce di sistema")],
+            "tts_engine": [("kokoro", "Kokoro (locale, rapida)"), ("qwen", "Qwen3-TTS (clonata, in LuZa)"), ("voicebox", "Voicebox (clonata)"), ("elevenlabs", "ElevenLabs"), ("chatterbox", "Chatterbox"), ("system", "Voce di sistema")],
             "kokoro_voice": list(KOKORO_VOICES.items()),
             "immagini_famiglia": [("z-image-turbo", "Z-Image Turbo"), ("schnell", "FLUX schnell"), ("dev", "FLUX dev"), ("qwen", "Qwen-Image")],
         }

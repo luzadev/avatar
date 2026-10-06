@@ -347,7 +347,51 @@ class VoiceboxVoice:
         return data
 
 
+class QwenVoice:
+    """Qwen3-TTS dentro LuZa (mlx-audio), voce clonata da un campione + trascrizione. Modello e generazione girano
+    sempre sullo stesso thread: MLX non condivide gli stream GPU tra thread."""
+
+    MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"
+
+    def __init__(self, ref_audio: str, ref_text: str, on_status=None) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+        self.ref_audio, self.ref_text = ref_audio, ref_text
+        self.voice = f"qwen:{ref_audio}"
+        self._on_status = on_status or (lambda m: None)
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qwen-tts")
+        self._model = None
+
+    def _load(self) -> None:
+        if self._model is None:
+            from mlx_audio.tts.utils import load_model
+            self._model = load_model(self.MODEL)
+
+    def load(self) -> None:
+        from pathlib import Path as _P
+        if not _P(self.ref_audio).is_file() or not self.ref_text.strip():
+            raise RuntimeError("Qwen3-TTS: manca il campione della voce (data/voices/qwen_ref.wav e .txt).")
+        self._on_status("Carico Qwen3-TTS…")
+        try:
+            self._pool.submit(self._load).result()
+        finally:
+            self._on_status(None)
+
+    def _gen(self, text: str) -> np.ndarray:
+        self._load()
+        parts = [np.array(r.audio, dtype=np.float32) for r in self._model.generate(
+            text, ref_audio=self.ref_audio, ref_text=self.ref_text, lang_code="italian")]
+        return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+
+    def synthesize(self, text: str) -> np.ndarray:
+        return self._pool.submit(self._gen, clean_for_speech(text)).result()
+
+
 def make_voice(settings, on_status=None):
+    if settings.get("tts_engine") == "qwen":
+        from pathlib import Path as _P
+        ref = _P(str(settings.get("qwen_ref") or "")) if settings.get("qwen_ref") else _P(__file__).resolve().parent.parent / "data" / "voices" / "qwen_ref.wav"
+        txt = ref.with_suffix(".txt")
+        return QwenVoice(str(ref), txt.read_text(encoding="utf-8") if txt.exists() else "", on_status=on_status)
     if settings.get("tts_engine") == "voicebox":
         return VoiceboxVoice(str(settings.get("voicebox_profile_id") or ""), str(settings.get("voicebox_engine") or "qwen"),
                              str(settings.get("voicebox_instruct") or ""), on_status=on_status)
