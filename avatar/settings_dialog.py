@@ -141,6 +141,15 @@ class SettingsDialog(QDialog):
         form2 = QFormLayout()
         self.tts_engine = _combo([("kokoro", "Kokoro, voce neurale in locale"), ("qwen", "Qwen3-TTS dentro LuZa: voce clonata, quasi in tempo reale"), ("voicebox", "Voicebox: Qwen3-TTS in locale, espressiva, voce clonata"), ("elevenlabs", "ElevenLabs, espressiva nel cloud (chiave API)"), ("chatterbox", "Chatterbox, espressiva in locale (lenta)"), ("system", "Voce di sistema (macOS)")], s.get("tts_engine"))
         form2.addRow("Motore voce", self.tts_engine)
+        from .tts import qwen_voices
+        row = QHBoxLayout()
+        self.qwen_voce = QComboBox(); self.qwen_voce.addItems(qwen_voices())
+        self.qwen_voce.setCurrentText(str(s.get("qwen_voce") or ""))
+        row.addWidget(self.qwen_voce, 1)
+        b = QPushButton("Ascolta"); b.clicked.connect(self._qwen_play); row.addWidget(b)
+        b = QPushButton("Importa campione…"); b.clicked.connect(self._qwen_import); row.addWidget(b)
+        form2.addRow("Voce Qwen3-TTS (clonata)", row)
+        self.qwen_hint = _note("Campione di 10-20 secondi di una sola voce, senza musica: viene trascritto da solo."); form2.addRow("", self.qwen_hint)
         self.kokoro_voice = _combo(list(KOKORO_VOICES.items()), s.get("kokoro_voice")); form2.addRow("Voce Kokoro", self.kokoro_voice)
         self.system_voice = _combo([("", "Automatica (Alice)")] + [(v, v) for v in SystemVoice.list_voices()], s.get("system_voice"))
         form2.addRow("Voce di sistema", self.system_voice)
@@ -494,6 +503,31 @@ class SettingsDialog(QDialog):
                 self._async.emit("el_error", str(err)[:120])
         threading.Thread(target=work, daemon=True).start()
 
+    def _qwen_play(self) -> None:
+        import subprocess
+        from .tts import VOICES_DIR
+        f = VOICES_DIR / f"{self.qwen_voce.currentText()}.wav"
+        if f.exists():
+            subprocess.Popen(["afplay", str(f)])
+
+    def _qwen_import(self) -> None:
+        from PyQt6.QtWidgets import QFileDialog, QInputDialog
+        path, _ = QFileDialog.getOpenFileName(self, "Campione della voce", str(Path.home() / "Downloads"), "Audio (*.mp3 *.m4a *.wav *.aac *.flac *.ogg)")
+        if not path:
+            return
+        name, ok = QInputDialog.getText(self, "Nome della voce", "Nome:", text=Path(path).stem)
+        if not ok:
+            return
+        self.qwen_hint.setText("Importo e trascrivo il campione…")
+
+        def go():
+            try:
+                from .tts import import_voice
+                self._async.emit("qwen", import_voice(path, name))
+            except Exception as err:
+                self._async.emit("qwen", f"!{err}")
+        threading.Thread(target=go, daemon=True).start()
+
     def _mcp_example(self) -> None:
         self.mcp_text.setPlainText(json.dumps({"mcpServers": {
             "filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", str(Path.home() / "Documents")]},
@@ -535,6 +569,12 @@ class SettingsDialog(QDialog):
     def _on_async(self, kind: str, payload) -> None:
         if kind == "ha":
             self.ha_hint.setText(str(payload)); return
+        if kind == "qwen":
+            if str(payload).startswith("!"):
+                self.qwen_hint.setText("Importazione fallita: " + str(payload)[1:]); return
+            from .tts import qwen_voices, VOICES_DIR
+            self.qwen_voce.clear(); self.qwen_voce.addItems(qwen_voices()); self.qwen_voce.setCurrentText(str(payload))
+            self.qwen_hint.setText("Voce «%s» importata. Trascrizione: %s" % (payload, (VOICES_DIR / f"{payload}.txt").read_text(encoding="utf-8")[:160])); return
         if kind == "mcp":
             self.mcp_hint.setText(str(payload)); return
         if kind == "vb":
@@ -606,7 +646,7 @@ class SettingsDialog(QDialog):
             "search_api_key": self.search_key.text().strip(),
             "claudecode_model": self.cc_model.currentData(), "claudecode_access": self.cc_access.currentData(),
             "claudecode_config_dir": self.cc_config.currentText().strip(), "claudecode_path": self.cc_path.text().strip(),
-            "tts_engine": self.tts_engine.currentData(), "kokoro_voice": self.kokoro_voice.currentData(),
+            "tts_engine": self.tts_engine.currentData(), "kokoro_voice": self.kokoro_voice.currentData(), "qwen_voce": self.qwen_voce.currentText(),
             "system_voice": self.system_voice.currentData(), "stt_model": self.stt_model.currentData(),
             "voicebox_profile_id": self.vb_profile.currentData() or "", "voicebox_engine": self.vb_engine.currentData(), "voicebox_instruct": self.vb_instruct.text().strip(),
             "elevenlabs_voice_id": self.el_voice.currentData() or "", "elevenlabs_model": self.el_model.currentData(),

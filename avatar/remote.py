@@ -270,7 +270,7 @@ class RemoteServer:
 
     # ── impostazioni dal telefono: motore, modello, ragionamento, voce ─────
     SETTING_KEYS = ("provider", "effort", "mlx_model", "mlx_thinking", "claudecode_model", "local_model",
-                    "tts_engine", "kokoro_voice", "voicebox_profile_id", "immagini_famiglia", "immagini_modello")
+                    "tts_engine", "kokoro_voice", "voicebox_profile_id", "qwen_voce", "immagini_famiglia", "immagini_modello")
 
     def _options(self) -> dict:
         from avatar.tts import KOKORO_VOICES
@@ -283,6 +283,7 @@ class RemoteServer:
             "claudecode_model": [("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")],
             "tts_engine": [("kokoro", "Kokoro (locale, rapida)"), ("qwen", "Qwen3-TTS (clonata, in LuZa)"), ("voicebox", "Voicebox (clonata)"), ("elevenlabs", "ElevenLabs"), ("chatterbox", "Chatterbox"), ("system", "Voce di sistema")],
             "kokoro_voice": list(KOKORO_VOICES.items()),
+            "qwen_voce": [(v, v.replace("_", " ")) for v in __import__("avatar.tts", fromlist=["qwen_voices"]).qwen_voices()],
             "immagini_famiglia": [("z-image-turbo", "Z-Image Turbo"), ("schnell", "FLUX schnell"), ("dev", "FLUX dev"), ("qwen", "Qwen-Image")],
         }
         try:

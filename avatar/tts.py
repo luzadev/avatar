@@ -347,6 +347,29 @@ class VoiceboxVoice:
         return data
 
 
+VOICES_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent / "data" / "voices"
+
+
+def qwen_voices() -> list[str]:
+    """Voci clonabili: file .wav in data/voices con la trascrizione .txt accanto."""
+    return sorted(p.stem for p in VOICES_DIR.glob("*.wav") if p.with_suffix(".txt").exists())
+
+
+def import_voice(src: str, name: str = "") -> str:
+    """Converte un campione (mp3, m4a, wav…) in data/voices/<nome>.wav a 24 kHz mono, max 20 s, e lo trascrive."""
+    import re
+    import subprocess
+    from pathlib import Path as _P
+    name = re.sub(r"[^a-z0-9_]+", "_", (name or _P(src).stem).lower()).strip("_") or "voce"
+    VOICES_DIR.mkdir(parents=True, exist_ok=True)
+    out = VOICES_DIR / f"{name}.wav"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", src, "-t", "20", "-ac", "1", "-ar", "24000", str(out)], check=True)
+    import mlx_whisper
+    text = mlx_whisper.transcribe(str(out), path_or_hf_repo="mlx-community/whisper-large-v3-turbo", language="it")["text"].strip()
+    out.with_suffix(".txt").write_text(text, encoding="utf-8")
+    return name
+
+
 class QwenVoice:
     """Qwen3-TTS dentro LuZa (mlx-audio), voce clonata da un campione + trascrizione. Modello e generazione girano
     sempre sullo stesso thread: MLX non condivide gli stream GPU tra thread."""
@@ -388,8 +411,10 @@ class QwenVoice:
 
 def make_voice(settings, on_status=None):
     if settings.get("tts_engine") == "qwen":
-        from pathlib import Path as _P
-        ref = _P(str(settings.get("qwen_ref") or "")) if settings.get("qwen_ref") else _P(__file__).resolve().parent.parent / "data" / "voices" / "qwen_ref.wav"
+        voices = qwen_voices()
+        ref = VOICES_DIR / f"{settings.get('qwen_voce') or ''}.wav"
+        if not ref.exists() and voices:
+            ref = VOICES_DIR / f"{voices[0]}.wav"
         txt = ref.with_suffix(".txt")
         return QwenVoice(str(ref), txt.read_text(encoding="utf-8") if txt.exists() else "", on_status=on_status)
     if settings.get("tts_engine") == "voicebox":

@@ -164,9 +164,9 @@ connect();
 
 // ── impostazioni: motore, modello, ragionamento, voce ─────────────────────
 const LABELS = {provider: 'Motore', effort: 'Profondità (Claude)', mlx_model: 'Modello interno', mlx_thinking: 'Ragionamento (interno)', claudecode_model: 'Modello Claude Code',
-  tts_engine: 'Voce', kokoro_voice: 'Voce Kokoro', voicebox_profile_id: 'Profilo Voicebox', immagini_famiglia: 'Immagini: famiglia', immagini_modello: 'Immagini: modello'};
+  tts_engine: 'Voce', kokoro_voice: 'Voce Kokoro', qwen_voce: 'Voce clonata', voicebox_profile_id: 'Profilo Voicebox', immagini_famiglia: 'Immagini: famiglia', immagini_modello: 'Immagini: modello'};
 const SHOW_IF = {mlx_model: v => v.provider === 'mlx', mlx_thinking: v => v.provider === 'mlx', claudecode_model: v => v.provider === 'claudecode', effort: v => v.provider !== 'mlx' && v.provider !== 'local',
-  kokoro_voice: v => v.tts_engine === 'kokoro', voicebox_profile_id: v => v.tts_engine === 'voicebox'};
+  kokoro_voice: v => v.tts_engine === 'kokoro', qwen_voce: v => v.tts_engine === 'qwen', voicebox_profile_id: v => v.tts_engine === 'voicebox'};
 let sdata = null;
 async function openSettings() {
   $('settings').style.display = 'block'; $('shint').textContent = 'carico…';

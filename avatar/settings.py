@@ -57,6 +57,7 @@ DEFAULTS: dict[str, Any] = {
     "abitudini_enabled": True,              # distillazione settimanale delle abitudini nella memoria
     "umore_enabled": False,                 # stima oraria dell'umore dai messaggi scritti dall'utente
     "io_nomi": "Luciano",                   # come compare l'utente come mittente nelle chat esportate
+    "qwen_voce": "luza_voce",               # voce clonata (file in data/voices) per il motore Qwen3-TTS
     "ipixel_enabled": False,                # pannello LED iPIXEL via Bluetooth
     "ipixel_address": "",                   # identificativo BLE (rilevato da solo)
     "ipixel_luminosita": 40,
