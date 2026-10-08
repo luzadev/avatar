@@ -57,6 +57,12 @@ DEFAULTS: dict[str, Any] = {
     "abitudini_enabled": True,              # distillazione settimanale delle abitudini nella memoria
     "umore_enabled": False,                 # stima oraria dell'umore dai messaggi scritti dall'utente
     "io_nomi": "Luciano",                   # come compare l'utente come mittente nelle chat esportate
+    "frasi_attesa": True,                   # "Un attimo che controllo…" se la risposta tarda più di ~1,3 s
+    "riserva_cloud": True,
+    "mcp_locali": False,                    # strumenti dei server MCP esterni anche per i modelli locali (prompt molto più lungo)                  # se il motore locale fallisce, la risposta la dà Claude
+    "documenti_enabled": True,              # indicizzazione oraria dei documenti per documenti_cerca
+    "documenti_cartelle": "~/Documents, ~/Desktop",
+    "documenti_escludi": "Progetti2026",    # nomi di cartelle da saltare (codice, dati sensibili…)
     "qwen_voce": "luza_voce",
     "qwen_modello": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",   # oppure ...-Base-bf16 (più lento, qualità piena)               # voce clonata (file in data/voices) per il motore Qwen3-TTS
     "ipixel_enabled": False,                # pannello LED iPIXEL via Bluetooth

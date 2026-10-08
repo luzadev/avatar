@@ -15,7 +15,7 @@ from pathlib import Path
 
 from avatar.memory_tools import memory_prompt, openai_tools, parse_args, run_tool
 from avatar.plugins import registry
-from avatar.websearch import brave_search
+from avatar.websearch import web_search
 from .base import Emit, History, Meter, compact_history, persona_text, summary_block, today_label, user_block
 from .openai_compat import SEARCH_TOOL, Aborted
 
@@ -26,7 +26,7 @@ SAMPLING = {"temp": 0.6, "top_p": 0.8, "top_k": 20}   # poco sotto i valori cons
 DEBUG = bool(os.environ.get("MLX_DEBUG"))   # stampa il testo grezzo generato (tag compresi)
 DEFAULT_MODEL = "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit"
 HUB = Path.home() / ".cache" / "huggingface" / "hub"
-_EXCLUDE = ("whisper", "tts", "embed", "rerank", "clip", "vl-", "-vl", "vision", "diffusion", "parakeet")
+_EXCLUDE = ("whisper", "tts", "kokoro", "embed", "rerank", "clip", "vl-", "-vl", "vision", "diffusion", "parakeet")
 
 _lock = threading.Lock()
 _loaded: dict = {"name": None, "model": None, "tokenizer": None, "cache": None, "tokens": [], "snap": None}
@@ -42,6 +42,31 @@ def cached_models() -> list[str]:
             if "mlx" in low and not any(x in low for x in _EXCLUDE) and (d / "snapshots").exists():
                 out.append(name)
     return out
+
+
+def model_size_gb(name: str) -> float:
+    """Peso su disco dei pesi di un modello nella cache (≈ memoria occupata una volta caricato); 0 se non scaricato."""
+    snaps = HUB / ("models--" + name.replace("/", "--")) / "snapshots"
+    if not snaps.exists():
+        return 0.0
+    return sum(f.stat().st_size for f in snaps.rglob("*.safetensors")) / 1e9
+
+
+def memory_check(name: str) -> str:
+    """Avviso se modello + voce + trascrizione superano ~75% della RAM del Mac."""
+    import subprocess
+    ram = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True).stdout.strip() or 0) / 1024 ** 3
+    gb = model_size_gb(name)
+    if not gb or not ram:
+        return "Peso non noto: verrà scaricato al primo uso."
+    extra = 2.4 + 0.5     # voce Qwen3-TTS 8 bit + Whisper
+    tot = gb + extra
+    msg = f"Modello {gb:.1f} GB + voce e trascrizione ≈ {tot:.0f} GB su {ram:.0f} GB di RAM."
+    if tot > ram * 0.75:
+        msg += " ⚠ Troppo pesante: il Mac rallenterà e le immagini potrebbero non avere spazio."
+    elif tot > ram * 0.6:
+        msg += " Va bene, ma con poca memoria libera per generare immagini."
+    return msg
 
 
 def load_model(name: str):
@@ -141,7 +166,7 @@ class TagFilter:
 # "raw_args": il template riproduce gli argomenti come stringa grezza (prompt identico a ciò che il modello ha scritto).
 FORMATS = {
     "hermes": {"think": ("<think>", "</think>"), "call": ("<tool_call>", "</tool_call>"), "thinking": False, "raw_args": False},
-    "gemma4": {"think": ("<|channel>", "<channel|>"), "call": ("<|tool_call>", "<tool_call|>"), "thinking": False, "raw_args": True},
+    "gemma4": {"think": ("<|channel>", "<channel|>"), "call": ("<|tool_call>", "<tool_call|>"), "thinking": False, "raw_args": False},
     "argkey": {"think": ("<think>", "</think>"), "call": ("<tool_call>", "</tool_call>"), "thinking": True, "raw_args": False},
 }
 GEMMA_ESC = '<|"|>'
@@ -212,6 +237,29 @@ def _parse_call(raw: str, fmt: str) -> tuple[str, dict, str] | None:
     if isinstance(args, str):
         args = parse_args(args)
     return str(d["name"]), dict(args or {}), json.dumps(args or {}, ensure_ascii=False)
+
+
+def _dict_args(m: dict) -> dict:
+    """Argomenti delle chiamate a strumenti sempre come dizionario: la cronologia è condivisa tra modelli e alcuni
+    template (Spark, Gemma heretic) rifiutano le stringhe salvate da altri modelli."""
+    calls = m.get("tool_calls")
+    if not calls or all(isinstance((c.get("function") or {}).get("arguments"), dict) for c in calls):
+        return m
+    fixed = []
+    for c in calls:
+        fn = dict(c.get("function") or {})
+        a = fn.get("arguments")
+        if not isinstance(a, dict):
+            try:
+                a = json.loads(a)
+            except Exception:
+                try:
+                    a = json.loads(_gemma_to_json("{" + str(a) + "}"))
+                except Exception:
+                    a = {}
+        fn["arguments"] = a if isinstance(a, dict) else {}
+        fixed.append({**c, "function": fn})
+    return {**m, "tool_calls": fixed}
 
 
 class MLXEngine:
@@ -321,7 +369,7 @@ class MLXEngine:
                 "- Per azioni sul Mac (per esempio il calendario) usa gli strumenti dedicati. Se uno risponde con [CONFIRMATION_PENDING], chiedi all'utente di confermare sul pannello e non dire che è fatto.\n"
                 "- Non inventare mai dati reali: meteo, calendario, mail, messaggi, file, ora, server e memoria li ottieni SOLO chiamando lo strumento corrispondente, anche a metà conversazione. Rispondere senza averlo chiamato è un errore grave.\n"
                 "- Chiama gli strumenti solo nel formato previsto dal tuo template e mai descrivendoli a parole.")
-        note += ("\n- Per informazioni aggiornate chiama cerca_web e rispondi in base ai risultati." if self.search_api_key
+        note += ("\n- Per informazioni aggiornate chiama cerca_web e rispondi in base ai risultati." if True
                  else "\n- Non hai accesso al web: se ti chiedono informazioni aggiornate, dillo chiaramente.")
         return f"{persona_text(self.assistant_name)}\n\n{user_block(self.user_name, memory_prompt())}{summary_block(self.history)}{note}"
 
@@ -335,11 +383,11 @@ class MLXEngine:
         return msgs[start:]
 
     def _tools(self) -> list:
-        return openai_tools() + registry.openai_tools() + ([SEARCH_TOOL] if self.search_api_key else [])
+        return openai_tools() + registry.openai_tools(local=True) + [SEARCH_TOOL]
 
     def _prompt(self, generation: bool = True) -> str:
         """Prompt completo; con generation=False si ferma alla fine dell'ultimo messaggio (parte stabile)."""
-        messages = [{"role": "system", "content": self._system()}, *self._recent()]
+        messages = [{"role": "system", "content": self._system()}, *[_dict_args(m) for m in self._recent()]]
         try:
             return self.tokenizer.apply_chat_template(messages, tools=self._tools(), add_generation_prompt=generation, tokenize=False, enable_thinking=self._thinking())
         except TypeError:
@@ -362,7 +410,7 @@ class MLXEngine:
         if name == "cerca_web":
             emit({"type": "status", "status": "searching"})
             try:
-                hits = brave_search(str(args.get("query", "")), self.search_api_key)
+                hits = web_search(str(args.get("query", "")), self.search_api_key)
             except Exception as err:
                 return f"Errore nella ricerca: {err}"
             for h in hits[:5]:
@@ -415,6 +463,7 @@ class MLXEngine:
         else:
             # generate_step inserisce nella cache ogni token emesso (anche l'ultimo, anche quando si ferma per limite).
             _loaded.update(cache=cache, tokens=tokens + generated)
+            emit({"type": "usage", "motore": f"locale ({self.model_name.split('/')[-1]})", "input": len(tokens), "output": len(generated)})
         tail = tools.flush()
         if tail:
             text += tail

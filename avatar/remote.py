@@ -40,6 +40,21 @@ def lan_ip() -> str:
         return "127.0.0.1"
 
 
+TAILSCALE = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+
+
+def tailscale() -> tuple[str, str]:
+    """(indirizzo IPv4, nome MagicDNS) del Mac su Tailscale, oppure ("", "") se spento o non installato."""
+    import json as _j
+    try:
+        st = _j.loads(subprocess.run([TAILSCALE, "status", "--json"], capture_output=True, text=True, timeout=5).stdout or "{}")
+        me = st.get("Self") or {}
+        ip = next((a for a in me.get("TailscaleIPs") or [] if "." in a), "")
+        return (ip, (me.get("DNSName") or "").rstrip(".")) if st.get("BackendState") == "Running" else ("", "")
+    except Exception:
+        return "", ""
+
+
 def ensure_certs(ip: str) -> tuple[Path, Path, Path]:
     """CA locale + certificato del server con SAN per IP e nome .local; rigenerato se l'IP cambia."""
     CERT_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,6 +71,9 @@ def ensure_certs(ip: str) -> tuple[Path, Path, Path]:
     (CERT_DIR / "ca.cer").write_bytes(subprocess.run(["openssl", "x509", "-in", str(ca_crt), "-outform", "DER"], check=True, capture_output=True).stdout)
     host = socket.gethostname()
     san = f"IP:{ip},IP:127.0.0.1,DNS:{host},DNS:localhost"
+    ts_ip, ts_name = tailscale()          # accesso da fuori casa: indirizzo e nome Tailscale nel certificato
+    if ts_ip:
+        san += f",IP:{ts_ip}" + (f",DNS:{ts_name}" if ts_name else "")
     if not srv_crt.exists() or not srv_san.exists() or srv_san.read_text() != san:
         csr = CERT_DIR / "server.csr"
         ext = CERT_DIR / "server.ext"
@@ -108,7 +126,11 @@ class RemoteServer:
 
     def urls(self) -> tuple[str, str, str, str]:
         base = f"https://{self.ip}:{HTTPS_PORT}"
-        return base, self.new_pin(), f"{base}/?k={self.token}", f"{base}  (CA: http://{self.ip}:{HTTP_PORT}/ca.cer)"
+        ts_ip, ts_name = tailscale()
+        if ts_ip:
+            ensure_certs(self.ip)   # certificato aggiornato se Tailscale è stato acceso dopo l'avvio (vale al prossimo riavvio)
+        fuori = f"  ·  fuori casa: https://{ts_name or ts_ip}:{HTTPS_PORT}" if ts_ip else "  ·  fuori casa: accendi Tailscale"
+        return base, self.new_pin(), f"{base}/?k={self.token}", f"{base}{fuori}  (CA: http://{self.ip}:{HTTP_PORT}/ca.cer)"
 
     def has_clients(self) -> bool:
         now = time.time()
@@ -461,7 +483,7 @@ class RemoteServer:
 
     # ── verso i telefoni (chiamabili da qualunque thread) ──────────────────
     def broadcast(self, payload: dict) -> None:
-        if not (self._clients or self._sse) or not self._loop:
+        if not self.has_clients() or not self._loop:
             return
         data = json.dumps(payload, ensure_ascii=False)
 

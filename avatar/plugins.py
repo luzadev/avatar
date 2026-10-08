@@ -127,8 +127,18 @@ class PluginRegistry:
     def anthropic_tools(self) -> list[dict]:
         return [{"name": t.name, "description": t.description, "eager_input_streaming": True, "input_schema": t.parameters} for t in self.active()]
 
-    def openai_tools(self) -> list[dict]:
-        return [{"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.parameters}} for t in self.active()]
+    def openai_tools(self, local: bool = False) -> list[dict]:
+        """Per i modelli locali (local=True) esclude i server MCP esterni: le loro descrizioni (Cua Driver ~14k token)
+        rallentano troppo il primo turno. Si riattivano con l'impostazione mcp_locali."""
+        tools = self.active()
+        if local:
+            try:
+                from avatar.settings import Settings
+                if not Settings().get("mcp_locali"):
+                    tools = [t for t in tools if not t.module.startswith("mcp:")]
+            except Exception:
+                pass
+        return [{"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.parameters}} for t in tools]
 
     def mcp_tools(self) -> list[dict]:
         return [{"name": t.name, "description": t.description, "inputSchema": t.parameters} for t in self.active()]

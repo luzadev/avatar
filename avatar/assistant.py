@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import queue
+import sys
 import threading
 import time
 
@@ -54,6 +55,29 @@ def _diario(testo: str, strumenti: list[str], origine: str) -> None:
             f.write(_j.dumps({"ts": time.strftime("%Y-%m-%d %H:%M"), "testo": testo[:300], "strumenti": strumenti[:8], "origine": origine}, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
+
+PREZZI = {"claude api": (5.0, 25.0)}   # $ per milione di token (input, output), Opus via API; ponytail: tabella fissa, aggiornare se cambiano i listini
+
+
+def _consumi(ev: dict) -> None:
+    """Riga in data/consumi.jsonl: motore, token in/out, costo (dichiarato da Claude Code o stimato per l'API)."""
+    try:
+        import json as _j
+        from avatar.settings import DATA_DIR as _D
+        costo = ev.get("costo")
+        if costo is None:
+            pin, pout = next((v for k, v in PREZZI.items() if str(ev.get("motore", "")).startswith(k)), (0.0, 0.0))
+            costo = (ev.get("input", 0) * pin + ev.get("output", 0) * pout) / 1e6
+        with open(_D / "consumi.jsonl", "a", encoding="utf-8") as f:
+            f.write(_j.dumps({"ts": time.strftime("%Y-%m-%d %H:%M"), "motore": ev.get("motore", "?"), "input": ev.get("input", 0),
+                              "output": ev.get("output", 0), "costo": round(float(costo), 5), "abbonamento": bool(ev.get("abbonamento"))}) + "\n")
+    except Exception:
+        pass
+
+
+FRASI_ATTESA = ["Un attimo che controllo.", "Fammi verificare.", "Dammi un secondo.", "Vediamo un po'.", "Ci guardo subito.",
+                "Aspetta un attimo, controllo.", "Mmh, fammi vedere.", "Un momento.", "Ok, ci penso un attimo.", "Fammi dare un'occhiata."]
 
 
 class Assistant:
@@ -168,6 +192,7 @@ class Assistant:
         except Exception as err:
             self.ui.write_log(f"ERR: Riconoscimento vocale non disponibile — {err}")
         self.reopen_audio()
+        self._prepare_fillers()
         self._ensure_engine()
         self._start_whatsapp_bridge()
         try:
@@ -223,6 +248,18 @@ class Assistant:
                 self._engine = AnthropicEngine(api_key, self.name, self.user_name, s.get("effort"))
         return self._engine
 
+    def _fallback_engine(self):
+        """Riserva cloud per i motori locali: Claude Code (abbonamento), o l'API se c'è la chiave. Creata una volta."""
+        s = self.settings
+        if getattr(self, "_backup", None) is None:
+            if s.get_secret("anthropic_api_key"):
+                self._backup = AnthropicEngine(s.get_secret("anthropic_api_key"), self.name, self.user_name, s.get("effort"))
+            else:
+                self._backup = ClaudeCodeEngine(s.get("claudecode_model") or "sonnet", s.get("claudecode_access") or "chat",
+                                                s.get("claudecode_path") or "", s.get("claudecode_config_dir") or "",
+                                                self.name, self.user_name, s.get("effort"))
+        return self._backup
+
     def reconfigure(self) -> None:
         """Dopo un salvataggio delle impostazioni."""
         self.interrupt(silent=True)
@@ -240,6 +277,43 @@ class Assistant:
         except Exception as err:
             self.ui.write_log(f"ERR: Avatar 3D — {err}")
         self.ui.write_log(f"SYS: Impostazioni applicate — motore {self.settings.get('provider')}.")
+
+    def _prepare_fillers(self) -> None:
+        """Sintetizza una volta le frasi d'attesa con la voce attuale: al bisogno partono subito, senza attendere la sintesi."""
+        voice = self.voice
+        self._fillers = []
+
+        def work():
+            out = []
+            for f in FRASI_ATTESA:
+                try:
+                    a = voice.synthesize(f)
+                    if len(a):
+                        out.append((f, a))
+                except Exception:
+                    break
+            if voice is self.voice:
+                self._fillers = out
+        threading.Thread(target=work, daemon=True, name="frasi-attesa").start()
+
+    def _maybe_filler(self, turn: int, answered: list) -> None:
+        """Dopo ~1,3 s senza risposta, una frase d'attesa breve e diversa dalla precedente."""
+        time.sleep(1.3)
+        if answered[0] or turn != self._turn or self._speaking or not self.settings.get("frasi_attesa", True):
+            return
+        choices = [x for x in getattr(self, "_fillers", []) if x[0] != getattr(self, "_last_filler", "")]
+        if not choices:
+            return
+        import random
+        text, audio = random.choice(choices)
+        self._last_filler = text
+        remote = getattr(self, "remote", None)
+        if remote is not None and remote.has_clients():
+            try:
+                remote.on_audio(text, audio)
+            except Exception:
+                pass
+        self._audio_q.put((turn, text, audio))
 
     def reload_voice(self, from_customise: bool = False) -> None:
         """Ricarica la voce. `from_customise`: la scelta arriva dal pannello Customise
@@ -269,6 +343,7 @@ class Assistant:
         self.voice = new
         self.ui.write_log(f"SYS: Voce: {getattr(new, 'voice', '') or 'sistema'} ({'Kokoro' if self.settings.get('tts_engine') == 'kokoro' else 'macOS'}).")
         threading.Thread(target=self._safe_load_voice, daemon=True).start()
+        self._prepare_fillers()
 
     def _safe_load_voice(self) -> None:
         try:
@@ -353,11 +428,17 @@ class Assistant:
             splitter = SentenceSplitter()
 
             used: list[str] = []
+            failed = [""]
+            answered = [False]
+            threading.Thread(target=self._maybe_filler, args=(turn, answered), daemon=True).start()
+            fallback_ok = [self.settings.get("provider") in ("mlx", "local") and bool(self.settings.get("riserva_cloud", True))]
 
             def emit(ev: dict) -> None:
                 if turn != self._turn:
                     return
                 t = ev.get("type")
+                if t == "usage":
+                    _consumi(ev); return
                 if t == "status" and ev.get("status") == "working" and ev.get("detail"):
                     used.append(str(ev["detail"]))
                 if t in ("done", "error"):
@@ -380,6 +461,7 @@ class Assistant:
                     elif ev["status"] == "loading" and detail:
                         self.ui.write_log(f"SYS: {detail}…")
                 elif t == "text":
+                    answered[0] = True
                     for s in splitter.push(ev["delta"]):
                         self._speech_q.put((turn, s))
                 elif t == "memory_saved":
@@ -393,6 +475,9 @@ class Assistant:
                     if ev.get("sources"):
                         self.ui.show_content("Fonti", "\n".join(f"• {s['title']}\n  {s['url']}" for s in ev["sources"]))
                 elif t == "error":
+                    if not ev.get("aborted") and fallback_ok[0]:
+                        failed[0] = ev["message"]          # motore locale fallito: la riserva cloud ripete la domanda
+                        return
                     if not ev.get("aborted"):
                         self.ui.write_log(f"ERR: {ev['message']}")
                         self._speech_q.put((turn, clean_for_speech("Scusa, c'è stato un problema: " + ev["message"])[:300]))
@@ -414,8 +499,16 @@ class Assistant:
                         attach_path = str(p)
             except Exception as err:
                 self.ui.write_log(f"ERR: Allegato — {err}")
+            doc = sys.modules.get("avatar_plugins.documenti_rag")
+            if doc is not None:
+                doc.pausa(True)
             try:
                 engine.send(engine_text, emit, self._abort, image=image, attach_path=attach_path)
+                if failed[0] and not self._abort.is_set():
+                    backup = self._fallback_engine()
+                    fallback_ok[0] = False
+                    self.ui.write_log(f"SYS: Motore locale in errore ({failed[0][:80]}): rispondo con Claude.")
+                    backup.send(engine_text, emit, self._abort, image=image, attach_path=attach_path)
             finally:
                 self._busy = False
                 self._speech_q.put((turn, END))
@@ -431,18 +524,33 @@ class Assistant:
                 continue
             if hasattr(self.voice, "stream"):   # voce in streaming: i pezzi partono mentre la frase è ancora in generazione
                 try:
-                    first = True
-                    for chunk in self.voice.stream(item, cancel=lambda t=turn: t != self._turn):
-                        if turn != self._turn:
-                            break
+                    first, buf = True, []
+                    lead = getattr(self, "_tts_lead", 1.0)     # secondi d'audio accumulati prima di iniziare a parlare
+
+                    def push(audio):
+                        nonlocal first
                         remote = getattr(self, "remote", None)
                         if remote is not None and remote.has_clients():
                             try:
-                                remote.on_audio(item if first else "", chunk)
+                                remote.on_audio(item if first else "", audio)
                             except Exception:
                                 pass
-                        self._audio_q.put((turn, item if first else "", chunk))
+                        self._audio_q.put((turn, item if first else "", audio))
                         first = False
+
+                    for chunk in self.voice.stream(item, cancel=lambda t=turn: t != self._turn):
+                        if turn != self._turn:
+                            break
+                        if buf is not None:
+                            buf.append(chunk)
+                            if sum(len(c) for c in buf) / 24000 >= lead:
+                                push(np.concatenate(buf)); buf = None
+                            continue
+                        if self._speaking and self.player._cursor < time.time():   # il lettore è rimasto a secco: scatto
+                            self._tts_lead = min(4.0, getattr(self, "_tts_lead", 1.0) + 0.5)
+                        push(chunk)
+                    if buf:
+                        push(np.concatenate(buf))
                 except Exception as err:
                     self.ui.write_log(f"ERR: Sintesi vocale — {err}")
                 continue
@@ -468,6 +576,9 @@ class Assistant:
             if text is END:
                 self.player.drain()
                 self._speaking = False
+                doc = sys.modules.get("avatar_plugins.documenti_rag")
+                if doc is not None and not self._busy:
+                    doc.pausa(False)
                 self._tail_until = time.monotonic() + 0.5
                 remote = getattr(self, "remote", None)
                 if remote is not None:

@@ -206,6 +206,10 @@ class ClaudeCodeEngine:
                     emit({"type": "status", "status": "thinking"})
             elif t == "result":
                 out["result"] = msg.get("result") or ""
+                u = msg.get("usage") or {}
+                emit({"type": "usage", "motore": f"claude code ({self.model})",
+                      "input": int(u.get("input_tokens", 0)) + int(u.get("cache_read_input_tokens", 0)) + int(u.get("cache_creation_input_tokens", 0)),
+                      "output": int(u.get("output_tokens", 0)), "costo": float(msg.get("total_cost_usd") or 0), "abbonamento": True})
                 if msg.get("is_error") or (msg.get("subtype") and msg["subtype"] != "success"):
                     errs = msg.get("errors") or []
                     out["error"] = "; ".join(map(str, errs)) or out["result"] or msg.get("subtype")

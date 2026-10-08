@@ -137,6 +137,10 @@ class AnthropicEngine:
                                 full += event.delta.text
                                 emit({"type": "text", "delta": event.delta.text})
                         message = stream.get_final_message()
+                        u = getattr(message, "usage", None)
+                        if u is not None:
+                            inp = int(getattr(u, "input_tokens", 0) or 0) + int(getattr(u, "cache_read_input_tokens", 0) or 0) + int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+                            emit({"type": "usage", "motore": f"claude api ({MODEL})", "input": inp, "output": int(getattr(u, "output_tokens", 0) or 0)})
                 except anthropic.BadRequestError as err:
                     if self._compaction and not full:
                         print(f"[Claude] compattazione rifiutata, la disattivo: {err.message}")

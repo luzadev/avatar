@@ -127,8 +127,13 @@ class SettingsDialog(QDialog):
         self.mlx_model.addItems(cached_models() or [DEFAULT_MODEL])
         self.mlx_model.setEditText(s.get("mlx_model") or DEFAULT_MODEL)
         f.addRow("Modello (repo Hugging Face mlx-community)", self.mlx_model)
+        from .engines.mlx_engine import memory_check
+        self.mlx_mem = _note(memory_check(self.mlx_model.currentText())); f.addRow("", self.mlx_mem)
+        self.mlx_model.currentTextChanged.connect(lambda t: self.mlx_mem.setText(memory_check(t.strip())))
         self.mlx_thinking = _combo([("auto", "Automatico (acceso solo dove serve, es. Spark)"), ("off", "Spento: risposte rapide"), ("on", "Acceso: più lento, meglio su domande complesse")], s.get("mlx_thinking") or "auto")
         f.addRow("Ragionamento", self.mlx_thinking)
+        self.riserva = QCheckBox("Se il modello locale fallisce, rispondi con Claude"); self.riserva.setChecked(bool(s.get("riserva_cloud", True)))
+        f.addRow("Riserva cloud", self.riserva)
         hint = QLabel("Elenco: modelli già scaricati. Un nome nuovo viene scaricato al primo uso. "
                       "Con 32 GB di RAM: modelli fino a ~20 GB in 4 bit (Qwen3-30B-A3B è veloce e supporta gli strumenti). "
                       "Non tenere aperto anche VLLMac con lo stesso modello.")
@@ -354,6 +359,14 @@ class SettingsDialog(QDialog):
         self.sp_sec.setPlaceholderText("•••••• (salvato)" if s.get_secret("spotify_client_secret") else "Client secret")
         form_sp.addRow("Client secret", self.sp_sec)
         add(pg_tool, form_sp)
+
+        # ── Documenti interrogabili ───────────────────────────────────────
+        form_doc = QFormLayout()
+        form_doc.addRow(_note("Documenti interrogabili: LuZa legge il contenuto di PDF, Word e testi in queste cartelle e risponde a domande su di essi. Indice locale, aggiornato ogni ora."))
+        self.doc_on = QCheckBox("Attivo"); self.doc_on.setChecked(bool(s.get("documenti_enabled", True))); form_doc.addRow("Indicizzazione", self.doc_on)
+        self.doc_dirs = QLineEdit(str(s.get("documenti_cartelle") or "")); form_doc.addRow("Cartelle (separate da virgola)", self.doc_dirs)
+        self.doc_skip = QLineEdit(str(s.get("documenti_escludi") or "")); form_doc.addRow("Sottocartelle da escludere", self.doc_skip)
+        add(pg_tool, form_doc)
 
         btns = QHBoxLayout(); btns.addStretch()
         cancel = QPushButton("Annulla"); cancel.clicked.connect(self.reject); btns.addWidget(cancel)
@@ -642,7 +655,7 @@ class SettingsDialog(QDialog):
         values = {
             "provider": self.provider.currentData(), "effort": self.effort.currentData(),
             "local_base_url": self.local_url.text().strip().rstrip("/"), "local_model": self.local_model.currentText().strip(),
-            "mlx_model": self.mlx_model.currentText().strip(), "mlx_thinking": self.mlx_thinking.currentData() or "auto",
+            "mlx_model": self.mlx_model.currentText().strip(), "mlx_thinking": self.mlx_thinking.currentData() or "auto", "riserva_cloud": self.riserva.isChecked(),
             "search_api_key": self.search_key.text().strip(),
             "claudecode_model": self.cc_model.currentData(), "claudecode_access": self.cc_access.currentData(),
             "claudecode_config_dir": self.cc_config.currentText().strip(), "claudecode_path": self.cc_path.text().strip(),
@@ -671,6 +684,7 @@ class SettingsDialog(QDialog):
             "ipixel_enabled": self.px_on.isChecked(), "ipixel_stati": self.px_stati.isChecked(), "ipixel_notifiche": self.px_notif.isChecked(),
             "ipixel_luminosita": int(self.px_lum.value()), "ipixel_intermezzi_min": int(self.px_fun.currentData() or 0), "ipixel_musica": self.px_mus.isChecked(),
             "spotify_client_id": self.sp_id.text().strip(),
+            "documenti_enabled": self.doc_on.isChecked(), "documenti_cartelle": self.doc_dirs.text().strip(), "documenti_escludi": self.doc_skip.text().strip(),
             "immagini_famiglia": self.img_fam.currentData() or "z-image-turbo", "immagini_modello": self.img_model.currentText().strip(),
         }
         if self.ha_token.text().strip():

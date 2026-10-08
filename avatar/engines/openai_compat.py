@@ -8,7 +8,7 @@ import openai
 
 from avatar.memory_tools import memory_prompt, openai_tools, parse_args, run_tool
 from avatar.plugins import registry
-from avatar.websearch import brave_search
+from avatar.websearch import web_search
 from .base import Emit, History, Meter, compact_history, persona_text, summary_block, today_label, user_block
 
 MAX_ROUNDS = 8
@@ -94,7 +94,7 @@ class OpenAICompatEngine:
                     "- Quando l'utente ti chiede di ricordare qualcosa, o ti dice un fatto importante su di sé, DEVI chiamare salva_memoria prima di rispondere. Non dire mai di aver salvato senza averlo chiamato davvero.\n"
                     "- Per cancellare una memoria chiama dimentica_memoria; per cercarne una non presente nel prompt chiama cerca_memoria.\n"
                     "- Per azioni sul Mac (per esempio il calendario) usa gli strumenti dedicati. Se uno risponde con [CONFIRMATION_PENDING], chiedi all'utente di confermare sul pannello e non dire che è fatto.")
-            note += ("\n- Per informazioni aggiornate chiama cerca_web e rispondi in base ai risultati." if self.search_api_key
+            note += ("\n- Per informazioni aggiornate chiama cerca_web e rispondi in base ai risultati." if True
                      else "\n- Non hai accesso al web: se ti chiedono informazioni aggiornate, dillo chiaramente.")
         else:
             note = "\n\nNota: in questa modalità non hai strumenti (niente memoria automatica né ricerca web)."
@@ -121,14 +121,14 @@ class OpenAICompatEngine:
     def _tools(self):
         if not self._tools_supported:
             return None
-        return openai_tools() + registry.openai_tools() + ([SEARCH_TOOL] if self.search_api_key else [])
+        return openai_tools() + registry.openai_tools(local=True) + [SEARCH_TOOL]
 
     def _run_tool(self, name: str, raw_args: str, emit: Emit, sources: list) -> str:
         args = parse_args(raw_args)
         if name == "cerca_web":
             emit({"type": "status", "status": "searching"})
             try:
-                hits = brave_search(str(args.get("query", "")), self.search_api_key)
+                hits = web_search(str(args.get("query", "")), self.search_api_key)
             except Exception as err:
                 return f"Errore nella ricerca: {err}"
             for h in hits[:5]:
